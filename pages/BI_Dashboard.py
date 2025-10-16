@@ -17,6 +17,11 @@ if 'authenticated' not in st.session_state or not st.session_state.authenticated
     st.warning("⚠️ Por favor, faça login primeiro!")
     st.stop()
 
+# Verificar se user existe e tem os dados necessários
+if not st.session_state.user or 'username' not in st.session_state.user:
+    st.error("❌ Erro de autenticação. Por favor, faça login novamente.")
+    st.stop()
+
 st.set_page_config(page_title="BI Dashboard", page_icon="📊", layout="wide")
 
 # CSS customizado para o dashboard

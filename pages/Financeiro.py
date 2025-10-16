@@ -13,9 +13,14 @@ if 'authenticated' not in st.session_state or not st.session_state.authenticated
     st.warning("⚠️ Por favor, faça login primeiro!")
     st.stop()
 
+# Verificar se user existe e tem os dados necessários
+if not st.session_state.user or 'nivel_acesso' not in st.session_state.user:
+    st.error("❌ Erro de autenticação. Por favor, faça login novamente.")
+    st.stop()
+
 # Verificar se é admin
 if st.session_state.user['nivel_acesso'] != 'admin':
-    st.error("❌ Acesso restrito! Apenas administradores podem acessar esta área.")
+    st.error("❌ Acesso negado! Apenas administradores podem acessar esta página.")
     st.stop()
 
 st.set_page_config(page_title="Financeiro", page_icon="💰", layout="wide")

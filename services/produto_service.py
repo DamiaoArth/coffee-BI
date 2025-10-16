@@ -63,3 +63,13 @@ class ProdutoService:
             db.commit()
             return True
         return False
+    
+    @staticmethod
+    def atualizar_estoque_e_minimo(db: Session, id: int, estoque_atual: int, estoque_minimo: int) -> bool:
+        produto = ProdutoService.buscar_por_id(db, id)
+        if produto:
+            produto.estoque_atual = estoque_atual
+            produto.estoque_minimo = estoque_minimo
+            db.commit()
+            return True
+        return False

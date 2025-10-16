@@ -85,24 +85,27 @@ def login_page():
                 if username and password:
                     db = SessionLocal()
                     user = AuthService.authenticate(db, username, password)
-                    db.close()
                     
                     if user:
-                        st.session_state.authenticated = True
-                        st.session_state.user = {
+                        # Extrair todos os dados do usuário ANTES de fechar a sessão
+                        user_data = {
                             'id': user.id,
                             'username': user.nome_usuario,
                             'nivel_acesso': user.nivel_acesso,
                             'funcionario_id': user.funcionario_id
                         }
+                        db.close()  # Fechar a sessão aqui
+                        
+                        st.session_state.authenticated = True
+                        st.session_state.user = user_data
                         st.rerun()
                     else:
+                        db.close()
                         st.error("❌ Usuário ou senha inválidos!")
                 else:
                     st.warning("⚠️ Por favor, preencha todos os campos!")
         
-        st.divider()
-        st.info("💡 **Usuário padrão:**\n- Usuário: `admin`\n- Senha: `admin123`")
+        st.divider() 
 
 # Função de logout
 def logout():
@@ -279,13 +282,13 @@ def main_page():
         col1, col2, col3 = st.columns(3)
         
         with col1:
-            st.page_link("pages/1_📦_Produtos.py", label="📦 Gerenciar Produtos", use_container_width=True)
+            st.page_link("pages/Produtos.py", label="📦 Gerenciar Produtos", use_container_width=True)
         
         with col2:
-            st.page_link("pages/2_🧾_Vendas.py", label="🧾 Registrar Venda", use_container_width=True)
+            st.page_link("pages/Vendas.py", label="🧾 Registrar Venda", use_container_width=True)
         
         with col3:
-            st.page_link("pages/6_📊_BI_Dashboard.py", label="📊 Ver Relatórios", use_container_width=True)
+            st.page_link("pages/BI_Dashboard.py", label="📊 Ver Relatórios", use_container_width=True)
         
     except Exception as e:
         st.error(f"❌ Erro ao carregar dashboard: {str(e)}")
