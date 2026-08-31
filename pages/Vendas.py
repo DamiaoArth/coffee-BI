@@ -1,378 +1,389 @@
-import streamlit as st
-import pandas as pd
-from config.database import SessionLocal
-from services.venda_service import VendaService
-from services.produto_service import ProdutoService
-from datetime import date, datetime
 import sys
+from datetime import date
 from pathlib import Path
 
-root_path = Path(__file__).parent.parent
-sys.path.append(str(root_path))
+import pandas as pd
+import streamlit as st
 
-if 'authenticated' not in st.session_state or not st.session_state.authenticated:
-    st.warning("⚠️ Por favor, faça login primeiro!")
-    st.stop()
+ROOT = Path(__file__).resolve().parent.parent
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 
-# Verificar se user existe e tem os dados necessários
-if not st.session_state.user or 'username' not in st.session_state.user:
-    st.error("❌ Erro de autenticação. Por favor, faça login novamente.")
-    st.stop()
+from ui.page import setup_page  # noqa: E402
 
-st.set_page_config(page_title="Vendas", page_icon="🧾", layout="wide")
+user = setup_page(
+    title="Vendas",
+    icon_name="cart",
+    heading="Vendas",
+    subtitle="Registro de vendas, histórico e consulta por número.",
+)
 
-st.markdown("# 🧾 Gerenciamento de Vendas")
-st.markdown("---")
+from config.database import SessionLocal  # noqa: E402
+from services.produto_service import ProdutoService  # noqa: E402
+from services.venda_service import VendaService  # noqa: E402
+from ui.components import (  # noqa: E402
+    badge,
+    data_table,
+    definition_list,
+    download_csv,
+    empty_state,
+    kpi_card,
+    kpi_row,
+    line_item,
+    notice,
+    section,
+    sidebar_nav,
+    total_line,
+)
+from ui.format import brl, data_br, hora_br, num, plural  # noqa: E402
+from ui.icons import material  # noqa: E402
+from ui.page import ROLES_GESTAO  # noqa: E402
 
-# Inicializar carrinho no session_state
-if 'carrinho' not in st.session_state:
-    st.session_state.carrinho = []
+st.session_state.setdefault("carrinho", [])
 
 with st.sidebar:
-    st.markdown(f"### 👤 {st.session_state.user['username']}")
-    st.divider()
-    
-    opcao = st.radio(
-        "Selecione uma opção:",
-        ["🛒 Nova Venda", "📋 Listar Vendas", "🔍 Consultar Venda"],
-        label_visibility="collapsed"
+    opcao = sidebar_nav(
+        [
+            ("nova", "Nova venda", "plus"),
+            ("historico", "Histórico", "list"),
+            ("consulta", "Consultar venda", "search"),
+        ],
+        state_key="nav_vendas",
     )
 
 db = SessionLocal()
 
 try:
-    # NOVA VENDA
-    if opcao == "🛒 Nova Venda":
-        st.markdown("## 🛒 Registrar Nova Venda")
-        
-        col1, col2 = st.columns([2, 1])
-        
-        with col1:
-            st.markdown("### Adicionar Produtos")
-            
-            produtos = ProdutoService.listar_produtos(db, apenas_ativos=True)
-            produtos_disponiveis = [p for p in produtos if p.estoque_atual > 0]
-            
-            if produtos_disponiveis:
-                col_prod, col_qtd, col_btn = st.columns([3, 1, 1])
-                
-                with col_prod:
-                    opcoes_produtos = {
-                        f"{p.nome} - R$ {float(p.preco_venda):.2f} (Est: {p.estoque_atual})": p.id 
-                        for p in produtos_disponiveis
-                    }
-                    
-                    produto_selecionado = st.selectbox(
-                        "Produto",
-                        options=list(opcoes_produtos.keys()),
-                        key="select_produto"
+    # ---------------------------------------------------------------- nova venda
+    if opcao == "nova":
+        col_form, col_carrinho = st.columns([2, 1], gap="large")
+
+        with col_form:
+            section("box", "Adicionar produtos")
+
+            produtos = [
+                p
+                for p in ProdutoService.listar_produtos(db, apenas_ativos=True)
+                if p.estoque_atual > 0
+            ]
+
+            if not produtos:
+                empty_state(
+                    "box",
+                    "Nenhum produto disponível",
+                    "Todos os itens estão sem estoque. Registre uma compra para repor.",
+                )
+            else:
+                rotulos = {
+                    f"{p.nome} · {brl(p.preco_venda)} · {p.estoque_atual} {p.unidade}": p.id
+                    for p in produtos
+                }
+
+                c_prod, c_qtd, c_btn = st.columns([3, 1, 1], vertical_alignment="bottom")
+                with c_prod:
+                    escolhido = st.selectbox(
+                        "Produto", options=list(rotulos.keys()), key="venda_produto"
                     )
-                
-                with col_qtd:
+                with c_qtd:
                     quantidade = st.number_input(
-                        "Quantidade",
-                        min_value=1,
-                        value=1,
-                        step=1,
-                        key="qtd_produto"
+                        "Quantidade", min_value=1, value=1, step=1, key="venda_qtd"
                     )
-                
-                with col_btn:
-                    st.markdown("<br>", unsafe_allow_html=True)
-                    if st.button("➕ Adicionar", use_container_width=True):
-                        produto_id = opcoes_produtos[produto_selecionado]
-                        produto = ProdutoService.buscar_por_id(db, produto_id)
-                        
-                        if produto and produto.estoque_atual >= quantidade:
-                            # Verificar se produto já está no carrinho
-                            produto_no_carrinho = next(
-                                (item for item in st.session_state.carrinho if item['id_produto'] == produto_id),
-                                None
+                with c_btn:
+                    adicionar = st.button(
+                        "Adicionar",
+                        width="stretch",
+                        icon=material("plus"),
+                    )
+
+                if adicionar:
+                    produto = ProdutoService.buscar_por_id(db, rotulos[escolhido])
+                    if produto is None:
+                        notice("Produto não encontrado.", "error")
+                    else:
+                        no_carrinho = next(
+                            (
+                                item
+                                for item in st.session_state.carrinho
+                                if item["id_produto"] == produto.id
+                            ),
+                            None,
+                        )
+                        atual = no_carrinho["quantidade"] if no_carrinho else 0
+                        if atual + quantidade > produto.estoque_atual:
+                            notice(
+                                f"Estoque insuficiente. Disponível: "
+                                f"{produto.estoque_atual} {produto.unidade}.",
+                                "warning",
                             )
-                            
-                            if produto_no_carrinho:
-                                nova_qtd = produto_no_carrinho['quantidade'] + quantidade
-                                if nova_qtd <= produto.estoque_atual:
-                                    produto_no_carrinho['quantidade'] = nova_qtd
-                                    produto_no_carrinho['subtotal'] = float(produto.preco_venda) * nova_qtd
-                                    st.success(f"✅ Quantidade atualizada!")
-                                else:
-                                    st.error(f"❌ Estoque insuficiente! Disponível: {produto.estoque_atual}")
-                            else:
-                                st.session_state.carrinho.append({
-                                    'id_produto': produto.id,
-                                    'nome': produto.nome,
-                                    'quantidade': quantidade,
-                                    'preco_unitario': float(produto.preco_venda),
-                                    'subtotal': float(produto.preco_venda) * quantidade
-                                })
-                                st.success(f"✅ {produto.nome} adicionado ao carrinho!")
+                        elif no_carrinho:
+                            no_carrinho["quantidade"] = atual + quantidade
+                            no_carrinho["subtotal"] = float(produto.preco_venda) * (
+                                atual + quantidade
+                            )
                             st.rerun()
                         else:
-                            st.error(f"❌ Estoque insuficiente! Disponível: {produto.estoque_atual if produto else 0}")
-            else:
-                st.warning("⚠️ Nenhum produto disponível em estoque!")
-        
-        with col2:
-            st.markdown("### 🛒 Carrinho")
-            
-            if st.session_state.carrinho:
-                total_venda = 0
-                
-                for idx, item in enumerate(st.session_state.carrinho):
-                    with st.container():
-                        col_info, col_remove = st.columns([4, 1])
-                        
-                        with col_info:
-                            st.markdown(f"""
-                            **{item['nome']}**  
-                            {item['quantidade']}x R$ {item['preco_unitario']:.2f} = R$ {item['subtotal']:.2f}
-                            """)
-                        
-                        with col_remove:
-                            if st.button("🗑️", key=f"remove_{idx}"):
-                                st.session_state.carrinho.pop(idx)
-                                st.rerun()
-                        
-                        st.divider()
-                    
-                    total_venda += item['subtotal']
-                
-                st.markdown(f"### Total: R$ {total_venda:.2f}")
-                
-                # Finalizar venda
-                st.markdown("---")
-                
-                metodo_pagamento = st.selectbox(
-                    "Método de Pagamento",
-                    ["dinheiro", "cartão débito", "cartão crédito", "pix", "vale"]
-                )
-                
-                observacoes = st.text_area("Observações (opcional)", placeholder="Ex: Cliente pediu sem açúcar")
-                
-                col_finalizar, col_limpar = st.columns(2)
-                
-                with col_finalizar:
-                    if st.button("✅ Finalizar Venda", use_container_width=True, type="primary"):
-                        try:
-                            venda = VendaService.criar_venda(
-                                db=db,
-                                data_venda=date.today(),
-                                metodo_pagamento=metodo_pagamento,
-                                itens=st.session_state.carrinho,
-                                observacoes=observacoes if observacoes else None,
-                                funcionario_id=st.session_state.user.get('funcionario_id')
+                            st.session_state.carrinho.append(
+                                {
+                                    "id_produto": produto.id,
+                                    "nome": produto.nome,
+                                    "quantidade": quantidade,
+                                    "preco_unitario": float(produto.preco_venda),
+                                    "subtotal": float(produto.preco_venda) * quantidade,
+                                }
                             )
-                            
-                            st.success(f"✅ Venda #{venda.id} finalizada com sucesso!")
-                            st.balloons()
-                            st.session_state.carrinho = []
                             st.rerun()
-                        except Exception as e:
-                            st.error(f"❌ Erro ao finalizar venda: {str(e)}")
-                
-                with col_limpar:
-                    if st.button("🗑️ Limpar Carrinho", use_container_width=True):
+
+                section("list", "Catálogo disponível")
+                data_table(
+                    pd.DataFrame(
+                        [
+                            {
+                                "Produto": p.nome,
+                                "Categoria": p.categoria,
+                                "Preço": brl(p.preco_venda),
+                                "Estoque": f"{p.estoque_atual} {p.unidade}",
+                            }
+                            for p in produtos
+                        ]
+                    ),
+                    height=320,
+                )
+
+        with col_carrinho:
+            section("receipt", "Carrinho")
+
+            if not st.session_state.carrinho:
+                empty_state("cart", "Carrinho vazio", "Adicione produtos para iniciar a venda.")
+            else:
+                remover = None
+                for idx, item in enumerate(st.session_state.carrinho):
+                    c_info, c_del = st.columns([3.4, 1.6], vertical_alignment="center")
+                    with c_info:
+                        line_item(
+                            item["nome"],
+                            f"{item['quantidade']} × {brl(item['preco_unitario'])}",
+                            brl(item["subtotal"]),
+                        )
+                    with c_del:
+                        if st.button(
+                            "Remover",
+                            key=f"del_item_{idx}",
+                            icon=material("trash"),
+                            width="stretch",
+                        ):
+                            remover = idx
+
+                if remover is not None:
+                    st.session_state.carrinho.pop(remover)
+                    st.rerun()
+
+                total = sum(item["subtotal"] for item in st.session_state.carrinho)
+                total_line("Total", brl(total))
+
+                metodo = st.selectbox(
+                    "Forma de pagamento",
+                    ["dinheiro", "cartão débito", "cartão crédito", "pix", "vale"],
+                )
+                observacoes = st.text_area(
+                    "Observações", placeholder="Opcional. Ex.: sem açúcar."
+                )
+
+                c_ok, c_limpar = st.columns(2)
+                with c_ok:
+                    finalizar = st.button(
+                        "Finalizar venda",
+                        width="stretch",
+                        type="primary",
+                        icon=material("check"),
+                    )
+                with c_limpar:
+                    limpar = st.button(
+                        "Limpar", width="stretch", icon=material("trash")
+                    )
+
+                if limpar:
+                    st.session_state.carrinho = []
+                    st.rerun()
+
+                if finalizar:
+                    try:
+                        venda = VendaService.criar_venda(
+                            db=db,
+                            data_venda=date.today(),
+                            metodo_pagamento=metodo,
+                            itens=st.session_state.carrinho,
+                            observacoes=observacoes or None,
+                            funcionario_id=user.get("funcionario_id"),
+                        )
                         st.session_state.carrinho = []
+                        st.toast(f"Venda {venda.id} registrada.", icon=material("check"))
                         st.rerun()
-            else:
-                st.info("🛒 Carrinho vazio")
-    
-    # LISTAR VENDAS
-    elif opcao == "📋 Listar Vendas":
-        st.markdown("## 📋 Histórico de Vendas")
-        
-        col1, col2, col3 = st.columns(3)
-        
-        with col1:
+                    except Exception as erro:
+                        notice(f"Não foi possível registrar a venda: {erro}", "error")
+
+    # ----------------------------------------------------------------- histórico
+    elif opcao == "historico":
+        section("filter", "Período")
+        c1, c2 = st.columns(2)
+        with c1:
             data_inicio = st.date_input(
-                "Data Início",
-                value=date.today().replace(day=1),
-                key="data_inicio_vendas"
+                "Início", value=date.today().replace(day=1), key="vendas_ini", format="DD/MM/YYYY"
             )
-        
-        with col2:
+        with c2:
             data_fim = st.date_input(
-                "Data Fim",
-                value=date.today(),
-                key="data_fim_vendas"
+                "Fim", value=date.today(), key="vendas_fim", format="DD/MM/YYYY"
             )
-        
-        with col3:
-            st.markdown("<br>", unsafe_allow_html=True)
-            buscar = st.button("🔍 Buscar", use_container_width=True)
-        
-        if buscar or True:  # Sempre mostra os resultados
-            vendas = VendaService.listar_vendas(db, data_inicio, data_fim)
-            
-            if vendas:
-                st.markdown(f"**{len(vendas)} venda(s) encontrada(s)**")
-                
-                # Estatísticas
-                total_periodo = sum(float(v.valor_total) for v in vendas)
-                
-                col1, col2, col3, col4 = st.columns(4)
-                
-                with col1:
-                    st.metric("Total Vendas", len(vendas))
-                
-                with col2:
-                    st.metric("Valor Total", f"R$ {total_periodo:,.2f}")
-                
-                with col3:
-                    ticket_medio = total_periodo / len(vendas) if vendas else 0
-                    st.metric("Ticket Médio", f"R$ {ticket_medio:.2f}")
-                
-                with col4:
-                    vendas_hoje = [v for v in vendas if v.data == date.today()]
-                    st.metric("Vendas Hoje", len(vendas_hoje))
-                
-                st.divider()
-                
-                # Tabela de vendas
-                dados_vendas = []
-                for v in vendas:
-                    dados_vendas.append({
-                        'ID': v.id,
-                        'Data': v.data.strftime('%d/%m/%Y'),
-                        'Hora': v.hora.strftime('%H:%M:%S') if v.hora else '-',
-                        'Valor': f"R$ {float(v.valor_total):.2f}",
-                        'Pagamento': v.metodo_pagamento,
-                        'Itens': len(v.itens) if v.itens else 0
-                    })
-                
-                df_vendas = pd.DataFrame(dados_vendas)
-                
-                # Selecionar venda para ver detalhes
-                venda_selecionada = st.selectbox(
-                    "Selecione uma venda para ver detalhes",
-                    options=[f"Venda #{v['ID']} - {v['Data']} - {v['Valor']}" for v in dados_vendas],
-                    key="select_venda_detalhe"
-                )
-                
-                if venda_selecionada:
-                    venda_id = int(venda_selecionada.split('#')[1].split(' ')[0])
-                    venda = VendaService.buscar_por_id(db, venda_id)
-                    
-                    if venda:
-                        with st.expander(f"📋 Detalhes da Venda #{venda.id}", expanded=True):
-                            col1, col2 = st.columns(2)
-                            
-                            with col1:
-                                st.markdown(f"""
-                                **Data:** {venda.data.strftime('%d/%m/%Y')}  
-                                **Hora:** {venda.hora.strftime('%H:%M:%S') if venda.hora else '-'}  
-                                **Método:** {venda.metodo_pagamento}  
-                                **Total:** R$ {float(venda.valor_total):.2f}
-                                """)
-                            
-                            with col2:
-                                if venda.observacoes:
-                                    st.markdown(f"**Observações:** {venda.observacoes}")
-                                if venda.funcionario:
-                                    st.markdown(f"**Vendedor:** {venda.funcionario.nome}")
-                            
-                            st.markdown("#### Itens da Venda")
-                            
-                            itens_data = []
-                            for item in venda.itens:
-                                itens_data.append({
-                                    'Produto': item.produto.nome,
-                                    'Quantidade': item.quantidade,
-                                    'Preço Unit.': f"R$ {float(item.preco_unitario):.2f}",
-                                    'Subtotal': f"R$ {float(item.subtotal):.2f}"
-                                })
-                            
-                            df_itens = pd.DataFrame(itens_data)
-                            st.dataframe(df_itens, use_container_width=True, hide_index=True)
-                            
-                            # Opção de cancelar venda (apenas admin)
-                            if st.session_state.user['nivel_acesso'] == 'admin':
-                                st.divider()
-                                if st.button(f"🗑️ Cancelar Venda #{venda.id}", type="secondary"):
-                                    if st.checkbox(f"Confirmo que desejo cancelar a venda #{venda.id}"):
-                                        if VendaService.cancelar_venda(db, venda.id):
-                                            st.success("✅ Venda cancelada e estoque devolvido!")
-                                            st.rerun()
-                                        else:
-                                            st.error("❌ Erro ao cancelar venda.")
-                
-                # Exportar relatório
-                st.divider()
-                csv = df_vendas.to_csv(index=False).encode('utf-8')
-                st.download_button(
-                    label="📥 Exportar Relatório",
-                    data=csv,
-                    file_name=f"vendas_{data_inicio}_{data_fim}.csv",
-                    mime="text/csv"
-                )
-            else:
-                st.info("📊 Nenhuma venda encontrada no período selecionado.")
-    
-    # CONSULTAR VENDA
-    elif opcao == "🔍 Consultar Venda":
-        st.markdown("## 🔍 Consultar Venda por ID")
-        
-        venda_id = st.number_input(
-            "Digite o ID da Venda",
-            min_value=1,
-            value=1,
-            step=1,
-            key="busca_venda_id"
-        )
-        
-        if st.button("🔍 Buscar Venda"):
-            venda = VendaService.buscar_por_id(db, venda_id)
-            
+
+        vendas = VendaService.listar_vendas(db, data_inicio, data_fim)
+
+        if not vendas:
+            empty_state(
+                "receipt",
+                "Nenhuma venda no período",
+                "Ajuste as datas ou registre uma venda para ver os resultados aqui.",
+            )
+        else:
+            total = sum(float(v.valor_total) for v in vendas)
+            ticket = total / len(vendas)
+            de_hoje = [v for v in vendas if v.data == date.today()]
+
+            kpi_row(
+                [
+                    kpi_card("Vendas", num(len(vendas)), "receipt", tone="brand"),
+                    kpi_card("Faturamento", brl(total), "money", tone="pos"),
+                    kpi_card("Ticket médio", brl(ticket), "target"),
+                    kpi_card("Hoje", num(len(de_hoje)), "clock", hint=data_br(date.today())),
+                ]
+            )
+
+            section("list", "Lançamentos")
+            df = pd.DataFrame(
+                [
+                    {
+                        "Nº": v.id,
+                        "Data": data_br(v.data),
+                        "Hora": hora_br(v.hora),
+                        "Valor": brl(v.valor_total),
+                        "Pagamento": v.metodo_pagamento,
+                        "Itens": len(v.itens) if v.itens else 0,
+                    }
+                    for v in vendas
+                ]
+            )
+            data_table(df, height=380)
+
+            c_export, _ = st.columns([1, 3])
+            with c_export:
+                download_csv(df, f"vendas_{data_inicio}_{data_fim}.csv", "Exportar período")
+
+            section("search", "Detalhe da venda")
+            escolhida = st.selectbox(
+                "Selecione uma venda",
+                options=[v.id for v in vendas],
+                format_func=lambda vid: f"Venda {vid}",
+                key="detalhe_venda",
+            )
+
+            venda = VendaService.buscar_por_id(db, escolhida)
             if venda:
-                st.success(f"✅ Venda #{venda.id} encontrada!")
-                
-                col1, col2 = st.columns(2)
-                
-                with col1:
-                    st.markdown("### Informações da Venda")
-                    st.markdown(f"""
-                    **ID:** {venda.id}  
-                    **Data:** {venda.data.strftime('%d/%m/%Y')}  
-                    **Hora:** {venda.hora.strftime('%H:%M:%S') if venda.hora else '-'}  
-                    **Método Pagamento:** {venda.metodo_pagamento}  
-                    **Valor Total:** R$ {float(venda.valor_total):.2f}
-                    """)
-                    
+                c1, c2 = st.columns([1, 1.4], gap="large")
+                with c1:
+                    definition_list(
+                        [
+                            ("Número", str(venda.id)),
+                            ("Data", data_br(venda.data)),
+                            ("Hora", hora_br(venda.hora)),
+                            ("Pagamento", venda.metodo_pagamento),
+                            ("Vendedor", venda.funcionario.nome if venda.funcionario else "—"),
+                            ("Total", brl(venda.valor_total)),
+                        ]
+                    )
                     if venda.observacoes:
-                        st.markdown(f"**Observações:** {venda.observacoes}")
-                    
-                    if venda.funcionario:
-                        st.markdown(f"**Vendedor:** {venda.funcionario.nome}")
-                
-                with col2:
-                    st.markdown("### Itens da Venda")
-                    
-                    for item in venda.itens:
-                        st.markdown(f"""
-                        **{item.produto.nome}**  
-                        Quantidade: {item.quantidade}  
-                        Preço Unit.: R$ {float(item.preco_unitario):.2f}  
-                        Subtotal: R$ {float(item.subtotal):.2f}
-                        """)
-                        st.divider()
-                
-                # Opção de cancelar (apenas admin)
-                if st.session_state.user['nivel_acesso'] == 'admin':
-                    st.markdown("---")
-                    st.warning("⚠️ Área Administrativa")
-                    
-                    if st.button(f"🗑️ Cancelar Venda #{venda.id}", type="secondary"):
-                        confirmar = st.checkbox(f"Confirmo que desejo cancelar a venda #{venda.id}")
-                        
-                        if confirmar:
-                            if VendaService.cancelar_venda(db, venda.id):
-                                st.success("✅ Venda cancelada e estoque devolvido!")
-                                st.rerun()
-                            else:
-                                st.error("❌ Erro ao cancelar venda.")
+                        st.caption(venda.observacoes)
+                with c2:
+                    data_table(
+                        pd.DataFrame(
+                            [
+                                {
+                                    "Produto": item.produto.nome,
+                                    "Qtd.": item.quantidade,
+                                    "Unitário": brl(item.preco_unitario),
+                                    "Subtotal": brl(item.subtotal),
+                                }
+                                for item in venda.itens
+                            ]
+                        )
+                    )
+
+                if user["nivel_acesso"] in ROLES_GESTAO:
+                    st.divider()
+                    confirmar = st.checkbox(
+                        f"Confirmo o cancelamento da venda {venda.id} e a devolução ao estoque",
+                        key=f"conf_cancel_{venda.id}",
+                    )
+                    if st.button(
+                        "Cancelar venda",
+                        disabled=not confirmar,
+                        icon=material("x_circle"),
+                        key=f"cancel_{venda.id}",
+                    ):
+                        if VendaService.cancelar_venda(db, venda.id):
+                            st.toast(f"Venda {venda.id} cancelada.", icon=material("check"))
+                            st.rerun()
+                        else:
+                            notice("Não foi possível cancelar a venda.", "error")
+
+    # ------------------------------------------------------------------ consulta
+    else:
+        section("search", "Consultar por número")
+        c1, c2 = st.columns([1, 3], vertical_alignment="bottom")
+        with c1:
+            venda_id = st.number_input("Número da venda", min_value=1, value=1, step=1)
+        with c2:
+            buscar = st.button("Buscar", icon=material("search"))
+
+        if buscar:
+            venda = VendaService.buscar_por_id(db, int(venda_id))
+            if venda is None:
+                empty_state(
+                    "search",
+                    f"Venda {int(venda_id)} não encontrada",
+                    "Confira o número no histórico de vendas.",
+                )
             else:
-                st.error(f"❌ Venda #{venda_id} não encontrada!")
+                st.markdown(
+                    badge(f"Venda {venda.id}", "brand", "receipt")
+                    + " "
+                    + badge(venda.metodo_pagamento, "neutral", "card"),
+                    unsafe_allow_html=True,
+                )
+                c1, c2 = st.columns([1, 1.4], gap="large")
+                with c1:
+                    definition_list(
+                        [
+                            ("Data", data_br(venda.data)),
+                            ("Hora", hora_br(venda.hora)),
+                            ("Itens", plural(len(venda.itens), "item", "itens")),
+                            ("Vendedor", venda.funcionario.nome if venda.funcionario else "—"),
+                            ("Total", brl(venda.valor_total)),
+                        ]
+                    )
+                    if venda.observacoes:
+                        st.caption(venda.observacoes)
+                with c2:
+                    data_table(
+                        pd.DataFrame(
+                            [
+                                {
+                                    "Produto": item.produto.nome,
+                                    "Qtd.": item.quantidade,
+                                    "Unitário": brl(item.preco_unitario),
+                                    "Subtotal": brl(item.subtotal),
+                                }
+                                for item in venda.itens
+                            ]
+                        )
+                    )
 
 finally:
     db.close()

@@ -1,564 +1,401 @@
-import streamlit as st
-import pandas as pd
-import plotly.express as px
-import plotly.graph_objects as go
-from plotly.subplots import make_subplots
-from config.database import SessionLocal
-from services.relatorio_service import RelatorioService
-from services.produto_service import ProdutoService
-from datetime import date, timedelta, datetime
 import sys
+from datetime import date, timedelta
 from pathlib import Path
 
-root_path = Path(__file__).parent.parent
-sys.path.append(str(root_path))
+import streamlit as st
 
-if 'authenticated' not in st.session_state or not st.session_state.authenticated:
-    st.warning("⚠️ Por favor, faça login primeiro!")
-    st.stop()
+ROOT = Path(__file__).resolve().parent.parent
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 
-# Verificar se user existe e tem os dados necessários
-if not st.session_state.user or 'username' not in st.session_state.user:
-    st.error("❌ Erro de autenticação. Por favor, faça login novamente.")
-    st.stop()
+from ui.page import setup_page  # noqa: E402
 
-st.set_page_config(page_title="BI Dashboard", page_icon="📊", layout="wide")
+user = setup_page(
+    title="BI",
+    icon_name="analytics",
+    heading="Business Intelligence",
+    subtitle="Faturamento, mix de produtos, pagamentos, caixa e margem por período.",
+)
 
-# CSS customizado para o dashboard
-st.markdown("""
-<style>
-    .metric-container {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        padding: 20px;
-        border-radius: 10px;
-        color: white;
-        text-align: center;
-    }
-    .chart-container {
-        background-color: #f8f9fa;
-        padding: 15px;
-        border-radius: 10px;
-        margin: 10px 0;
-    }
-</style>
-""", unsafe_allow_html=True)
+from config.database import SessionLocal  # noqa: E402
+from services.produto_service import ProdutoService  # noqa: E402
+from services.relatorio_service import RelatorioService  # noqa: E402
+from ui import charts  # noqa: E402
+from ui.components import (  # noqa: E402
+    data_table,
+    download_csv,
+    empty_state,
+    kpi_card,
+    kpi_row,
+    notice,
+    section,
+)
+from ui.format import brl, data_br, num, pct, plural, signed_pct  # noqa: E402
+from ui.icons import material  # noqa: E402
 
-st.markdown("# 📊 Business Intelligence Dashboard")
-st.markdown("### Análise Completa de Dados da Cafeteria")
-st.markdown("---")
+PRESETS = {
+    "Hoje": 0,
+    "Últimos 7 dias": 6,
+    "Últimos 30 dias": 29,
+    "Últimos 90 dias": 89,
+    "Este ano": None,
+    "Personalizado": -1,
+}
+
+BLOCOS = ["Vendas", "Produtos", "Categorias", "Pagamentos", "Caixa", "Margem"]
+
+hoje = date.today()
+
+with st.sidebar:
+    st.markdown('<p class="erp-navlabel">Período</p>', unsafe_allow_html=True)
+    preset = st.selectbox("Intervalo", list(PRESETS.keys()), index=2,
+                          label_visibility="collapsed")
+
+    if preset == "Personalizado":
+        data_inicio = st.date_input(
+            "Início", value=hoje - timedelta(days=29), format="DD/MM/YYYY"
+        )
+        data_fim = st.date_input("Fim", value=hoje, format="DD/MM/YYYY")
+    elif preset == "Este ano":
+        data_inicio, data_fim = date(hoje.year, 1, 1), hoje
+    else:
+        data_inicio, data_fim = hoje - timedelta(days=PRESETS[preset]), hoje
+
+    st.caption(f"{data_br(data_inicio)} a {data_br(data_fim)}")
+
+    st.markdown('<p class="erp-navlabel">Blocos exibidos</p>', unsafe_allow_html=True)
+    blocos = st.multiselect(
+        "Blocos", BLOCOS, default=BLOCOS[:4], label_visibility="collapsed"
+    )
 
 db = SessionLocal()
 
 try:
-    # Sidebar para filtros
-    with st.sidebar:
-        st.markdown(f"### 👤 {st.session_state.user['username']}")
-        st.divider()
-        
-        st.markdown("### 📅 Período de Análise")
-        
-        periodo_preset = st.selectbox(
-            "Período Rápido",
-            ["Hoje", "Última Semana", "Último Mês", "Últimos 3 Meses", "Este Ano", "Personalizado"]
-        )
-        
-        hoje = date.today()
-        
-        if periodo_preset == "Hoje":
-            data_inicio = data_fim = hoje
-        elif periodo_preset == "Última Semana":
-            data_inicio = hoje - timedelta(days=7)
-            data_fim = hoje
-        elif periodo_preset == "Último Mês":
-            data_inicio = hoje - timedelta(days=30)
-            data_fim = hoje
-        elif periodo_preset == "Últimos 3 Meses":
-            data_inicio = hoje - timedelta(days=90)
-            data_fim = hoje
-        elif periodo_preset == "Este Ano":
-            data_inicio = date(hoje.year, 1, 1)
-            data_fim = hoje
-        else:
-            data_inicio = st.date_input("Data Início", value=hoje - timedelta(days=30))
-            data_fim = st.date_input("Data Fim", value=hoje)
-        
-        st.divider()
-        
-        # Filtros adicionais
-        st.markdown("### 🔍 Filtros")
-        mostrar_graficos = st.multiselect(
-            "Gráficos para Exibir",
-            ["Vendas", "Produtos", "Categorias", "Pagamentos", "Fluxo de Caixa", "Lucratividade"],
-            default=["Vendas", "Produtos", "Categorias", "Pagamentos"]
-        )
-    
-    # MÉTRICAS PRINCIPAIS
-    st.markdown("## 📈 Indicadores Principais")
-    
-    # Buscar dados
     df_vendas = RelatorioService.vendas_por_periodo(db, data_inicio, data_fim)
-    
-    if not df_vendas.empty:
-        total_vendas = df_vendas['Total'].sum()
-        qtd_vendas = df_vendas['Quantidade'].sum()
-        ticket_medio = total_vendas / qtd_vendas if qtd_vendas > 0 else 0
-        
-        # Comparar com período anterior
-        dias_periodo = (data_fim - data_inicio).days + 1
-        data_inicio_anterior = data_inicio - timedelta(days=dias_periodo)
-        data_fim_anterior = data_inicio - timedelta(days=1)
-        
-        df_vendas_anterior = RelatorioService.vendas_por_periodo(db, data_inicio_anterior, data_fim_anterior)
-        total_anterior = df_vendas_anterior['Total'].sum() if not df_vendas_anterior.empty else 0
-        
-        variacao = ((total_vendas - total_anterior) / total_anterior * 100) if total_anterior > 0 else 0
-        
-        # Exibir métricas
-        col1, col2, col3, col4 = st.columns(4)
-        
-        with col1:
-            st.metric(
-                label="💰 Faturamento Total",
-                value=f"R$ {total_vendas:,.2f}",
-                delta=f"{variacao:+.1f}% vs período anterior"
-            )
-        
-        with col2:
-            st.metric(
-                label="🧾 Total de Vendas",
-                value=int(qtd_vendas),
-                delta=f"{'📈' if qtd_vendas > 0 else '📉'}"
-            )
-        
-        with col3:
-            st.metric(
-                label="🎯 Ticket Médio",
-                value=f"R$ {ticket_medio:.2f}",
-                delta=f"{dias_periodo} dias"
-            )
-        
-        with col4:
-            # Produtos com estoque baixo
-            produtos_baixo = ProdutoService.produtos_estoque_baixo(db)
-            st.metric(
-                label="⚠️ Alertas de Estoque",
-                value=len(produtos_baixo),
-                delta="Atenção" if len(produtos_baixo) > 0 else "OK",
-                delta_color="inverse" if len(produtos_baixo) > 0 else "normal"
-            )
-        
-        st.markdown("---")
-        
-        # GRÁFICO DE VENDAS AO LONGO DO TEMPO
-        if "Vendas" in mostrar_graficos:
-            st.markdown("## 📈 Evolução das Vendas")
-            
-            col1, col2 = st.columns([2, 1])
-            
-            with col1:
-                fig_vendas = go.Figure()
-                
-                fig_vendas.add_trace(go.Scatter(
-                    x=df_vendas['Data'],
-                    y=df_vendas['Total'],
-                    mode='lines+markers',
-                    name='Faturamento',
-                    line=dict(color='#667eea', width=3),
-                    fill='tozeroy',
-                    fillcolor='rgba(102, 126, 234, 0.1)'
-                ))
-                
-                fig_vendas.update_layout(
-                    title="Faturamento Diário",
-                    xaxis_title="Data",
-                    yaxis_title="Valor (R$)",
-                    height=400,
-                    hovermode='x unified',
-                    showlegend=False
-                )
-                
-                st.plotly_chart(fig_vendas, use_container_width=True)
-            
-            with col2:
-                # Estatísticas do período
-                st.markdown("### 📊 Estatísticas")
-                st.metric("Maior Venda", f"R$ {df_vendas['Total'].max():.2f}")
-                st.metric("Menor Venda", f"R$ {df_vendas['Total'].min():.2f}")
-                st.metric("Média Diária", f"R$ {df_vendas['Total'].mean():.2f}")
-                
-                # Dia com mais vendas
-                dia_max = df_vendas.loc[df_vendas['Total'].idxmax(), 'Data']
-                st.info(f"🏆 Melhor dia: {dia_max.strftime('%d/%m/%Y')}")
-        
-        # PRODUTOS MAIS VENDIDOS
-        if "Produtos" in mostrar_graficos:
-            st.markdown("## 🏆 Top Produtos Mais Vendidos")
-            
-            df_produtos = RelatorioService.produtos_mais_vendidos(db, data_inicio, data_fim, top=10)
-            
-            if not df_produtos.empty:
-                col1, col2 = st.columns(2)
-                
-                with col1:
-                    fig_produtos_bar = px.bar(
-                        df_produtos,
-                        x='Quantidade',
-                        y='Produto',
-                        orientation='h',
-                        title='Quantidade Vendida',
-                        color='Quantidade',
-                        color_continuous_scale='Blues'
-                    )
-                    fig_produtos_bar.update_layout(
-                        height=400,
-                        showlegend=False,
-                        yaxis={'categoryorder': 'total ascending'}
-                    )
-                    st.plotly_chart(fig_produtos_bar, use_container_width=True)
-                
-                with col2:
-                    fig_produtos_pie = px.pie(
-                        df_produtos.head(5),
-                        values='Total',
-                        names='Produto',
-                        title='Top 5 - Participação no Faturamento',
-                        color_discrete_sequence=px.colors.sequential.RdBu
-                    )
-                    fig_produtos_pie.update_traces(
-                        textposition='inside',
-                        textinfo='percent+label'
-                    )
-                    fig_produtos_pie.update_layout(height=400)
-                    st.plotly_chart(fig_produtos_pie, use_container_width=True)
-                
-                # Tabela detalhada
-                with st.expander("📋 Ver Tabela Detalhada"):
-                    st.dataframe(
-                        df_produtos.style.format({
-                            'Total': 'R$ {:,.2f}',
-                            'Quantidade': '{:,}'
-                        }),
-                        use_container_width=True,
-                        hide_index=True
-                    )
-            else:
-                st.info("📊 Nenhum dado de produtos disponível para o período.")
-        
-        # VENDAS POR CATEGORIA
-        if "Categorias" in mostrar_graficos:
-            st.markdown("## 📦 Análise por Categoria")
-            
-            df_categorias = RelatorioService.vendas_por_categoria(db, data_inicio, data_fim)
-            
-            if not df_categorias.empty:
-                col1, col2 = st.columns(2)
-                
-                with col1:
-                    fig_cat_pie = px.pie(
-                        df_categorias,
-                        values='Total',
-                        names='Categoria',
-                        title='Faturamento por Categoria',
-                        hole=0.4,
-                        color_discrete_sequence=px.colors.sequential.Sunset
-                    )
-                    fig_cat_pie.update_traces(textposition='inside', textinfo='percent+label')
-                    fig_cat_pie.update_layout(height=400)
-                    st.plotly_chart(fig_cat_pie, use_container_width=True)
-                
-                with col2:
-                    fig_cat_bar = px.bar(
-                        df_categorias,
-                        x='Categoria',
-                        y='Quantidade',
-                        title='Quantidade Vendida por Categoria',
-                        color='Quantidade',
-                        color_continuous_scale='Viridis'
-                    )
-                    fig_cat_bar.update_layout(height=400, showlegend=False)
-                    st.plotly_chart(fig_cat_bar, use_container_width=True)
-                
-                # Insights
-                categoria_top = df_categorias.loc[df_categorias['Total'].idxmax()]
-                st.success(f"🎯 **Categoria Líder:** {categoria_top['Categoria']} com R$ {float(categoria_top['Total']):.2f} em vendas")
-        
-        # MÉTODOS DE PAGAMENTO
-        if "Pagamentos" in mostrar_graficos:
-            st.markdown("## 💳 Análise de Formas de Pagamento")
-            
-            df_pagamentos = RelatorioService.vendas_por_metodo_pagamento(db, data_inicio, data_fim)
-            
-            if not df_pagamentos.empty:
-                col1, col2 = st.columns([1, 1])
-                
-                with col1:
-                    fig_pag = px.funnel(
-                        df_pagamentos,
-                        x='Total',
-                        y='Método',
-                        title='Faturamento por Método de Pagamento',
-                        color='Total',
-                        color_continuous_scale='Greens'
-                    )
-                    fig_pag.update_layout(height=400)
-                    st.plotly_chart(fig_pag, use_container_width=True)
-                
-                with col2:
-                    # Criar gráfico de barras horizontal
-                    fig_pag_bar = go.Figure()
-                    
-                    fig_pag_bar.add_trace(go.Bar(
-                        x=df_pagamentos['Quantidade'],
-                        y=df_pagamentos['Método'],
-                        orientation='h',
-                        marker=dict(
-                            color=df_pagamentos['Total'],
-                            colorscale='Blues',
-                            showscale=True
-                        ),
-                        text=df_pagamentos['Quantidade'],
-                        textposition='auto'
-                    ))
-                    
-                    fig_pag_bar.update_layout(
-                        title='Quantidade de Transações por Método',
-                        xaxis_title='Quantidade',
-                        yaxis_title='Método',
-                        height=400
-                    )
-                    st.plotly_chart(fig_pag_bar, use_container_width=True)
-        
-        # FLUXO DE CAIXA
-        if "Fluxo de Caixa" in mostrar_graficos:
-            st.markdown("## 💰 Fluxo de Caixa")
-            
-            df_fluxo = RelatorioService.fluxo_caixa(db, data_inicio, data_fim)
-            
-            if not df_fluxo.empty:
-                # Gráfico de fluxo de caixa
-                fig_fluxo = go.Figure()
-                
-                fig_fluxo.add_trace(go.Bar(
-                    name='Entradas',
-                    x=df_fluxo['data'],
-                    y=df_fluxo['entrada'],
-                    marker_color='green'
-                ))
-                
-                fig_fluxo.add_trace(go.Bar(
-                    name='Saídas',
-                    x=df_fluxo['data'],
-                    y=df_fluxo['saida'],
-                    marker_color='red'
-                ))
-                
-                fig_fluxo.add_trace(go.Scatter(
-                    name='Saldo Acumulado',
-                    x=df_fluxo['data'],
-                    y=df_fluxo['saldo_acumulado'],
-                    mode='lines+markers',
-                    line=dict(color='blue', width=3),
-                    yaxis='y2'
-                ))
-                
-                fig_fluxo.update_layout(
-                    title='Fluxo de Caixa Detalhado',
-                    xaxis_title='Data',
-                    yaxis_title='Valor (R$)',
-                    yaxis2=dict(
-                        title='Saldo Acumulado (R$)',
-                        overlaying='y',
-                        side='right'
-                    ),
-                    barmode='group',
-                    height=500,
-                    hovermode='x unified'
-                )
-                
-                st.plotly_chart(fig_fluxo, use_container_width=True)
-                
-                # Métricas do fluxo
-                col1, col2, col3, col4 = st.columns(4)
-                
-                total_entradas = df_fluxo['entrada'].sum()
-                total_saidas = df_fluxo['saida'].sum()
-                saldo_final = df_fluxo['saldo_acumulado'].iloc[-1] if len(df_fluxo) > 0 else 0
-                
-                with col1:
-                    st.metric("💵 Total Entradas", f"R$ {total_entradas:,.2f}")
-                
-                with col2:
-                    st.metric("💸 Total Saídas", f"R$ {total_saidas:,.2f}")
-                
-                with col3:
-                    saldo_periodo = total_entradas - total_saidas
-                    st.metric(
-                        "📊 Saldo Período",
-                        f"R$ {saldo_periodo:,.2f}",
-                        delta="Positivo" if saldo_periodo > 0 else "Negativo"
-                    )
-                
-                with col4:
-                    st.metric("🏦 Saldo Acumulado", f"R$ {saldo_final:,.2f}")
-            else:
-                st.info("📊 Nenhum dado de fluxo de caixa disponível.")
-        
-        # ANÁLISE DE LUCRATIVIDADE
-        if "Lucratividade" in mostrar_graficos:
-            st.markdown("## 💎 Análise de Lucratividade")
-            
-            df_lucro = RelatorioService.lucro_por_produto(db, data_inicio, data_fim)
-            
-            if not df_lucro.empty:
-                # Top 10 produtos mais lucrativos
-                df_lucro_top = df_lucro.nlargest(10, 'Lucro')
-                
-                col1, col2 = st.columns(2)
-                
-                with col1:
-                    fig_lucro = px.bar(
-                        df_lucro_top,
-                        x='Produto',
-                        y=['Receita', 'Custo', 'Lucro'],
-                        title='Top 10 Produtos - Análise de Lucratividade',
-                        barmode='group',
-                        color_discrete_map={
-                            'Receita': '#2ecc71',
-                            'Custo': '#e74c3c',
-                            'Lucro': '#3498db'
-                        }
-                    )
-                    fig_lucro.update_layout(
-                        height=400,
-                        xaxis_tickangle=-45
-                    )
-                    st.plotly_chart(fig_lucro, use_container_width=True)
-                
-                with col2:
-                    fig_margem = px.bar(
-                        df_lucro_top,
-                        x='Produto',
-                        y='Margem %',
-                        title='Margem de Lucro (%)',
-                        color='Margem %',
-                        color_continuous_scale='RdYlGn'
-                    )
-                    fig_margem.update_layout(
-                        height=400,
-                        xaxis_tickangle=-45,
-                        showlegend=False
-                    )
-                    st.plotly_chart(fig_margem, use_container_width=True)
-                
-                # Métricas de lucratividade
-                col1, col2, col3 = st.columns(3)
-                
-                with col1:
-                    lucro_total = df_lucro['Lucro'].sum()
-                    st.metric("💰 Lucro Total", f"R$ {lucro_total:,.2f}")
-                
-                with col2:
-                    receita_total = df_lucro['Receita'].sum()
-                    margem_geral = (lucro_total / receita_total * 100) if receita_total > 0 else 0
-                    st.metric("📊 Margem Geral", f"{margem_geral:.1f}%")
-                
-                with col3:
-                    produto_mais_lucrativo = df_lucro.loc[df_lucro['Lucro'].idxmax()]
-                    st.metric("🏆 Produto Mais Lucrativo", produto_mais_lucrativo['Produto'])
-                
-                # Tabela completa de lucratividade
-                with st.expander("📋 Ver Análise Completa de Lucratividade"):
-                    st.dataframe(
-                        df_lucro.style.format({
-                            'Receita': 'R$ {:,.2f}',
-                            'Custo': 'R$ {:,.2f}',
-                            'Lucro': 'R$ {:,.2f}',
-                            'Margem %': '{:.2f}%'
-                        }).background_gradient(subset=['Margem %'], cmap='RdYlGn'),
-                        use_container_width=True,
-                        hide_index=True
-                    )
-        
-        # SEÇÃO DE EXPORTAÇÃO
-        st.markdown("---")
-        st.markdown("## 📥 Exportar Relatórios")
-        
-        col1, col2, col3 = st.columns(3)
-        
-        with col1:
-            if not df_vendas.empty:
-                csv_vendas = df_vendas.to_csv(index=False).encode('utf-8')
-                st.download_button(
-                    label="📊 Exportar Vendas (CSV)",
-                    data=csv_vendas,
-                    file_name=f"vendas_{data_inicio}_{data_fim}.csv",
-                    mime="text/csv",
-                    use_container_width=True
-                )
-        
-        with col2:
-            if "Produtos" in mostrar_graficos and not df_produtos.empty:
-                csv_produtos = df_produtos.to_csv(index=False).encode('utf-8')
-                st.download_button(
-                    label="🏆 Exportar Top Produtos (CSV)",
-                    data=csv_produtos,
-                    file_name=f"produtos_{data_inicio}_{data_fim}.csv",
-                    mime="text/csv",
-                    use_container_width=True
-                )
-        
-        with col3:
-            if "Lucratividade" in mostrar_graficos and not df_lucro.empty:
-                csv_lucro = df_lucro.to_csv(index=False).encode('utf-8')
-                st.download_button(
-                    label="💎 Exportar Lucratividade (CSV)",
-                    data=csv_lucro,
-                    file_name=f"lucratividade_{data_inicio}_{data_fim}.csv",
-                    mime="text/csv",
-                    use_container_width=True
-                )
-        
-        # INSIGHTS AUTOMÁTICOS
-        st.markdown("---")
-        st.markdown("## 🤖 Insights Automáticos")
-        
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            st.markdown("### 📈 Oportunidades")
-            
-            # Produtos com boa margem mas baixa venda
-            if not df_lucro.empty:
-                produtos_oportunidade = df_lucro[
-                    (df_lucro['Margem %'] > 50) & 
-                    (df_lucro['Quantidade'] < df_lucro['Quantidade'].median())
-                ].head(3)
-                
-                if not produtos_oportunidade.empty:
-                    st.success("💡 **Produtos com alta margem e baixa venda:**")
-                    for _, prod in produtos_oportunidade.iterrows():
-                        st.markdown(f"- **{prod['Produto']}**: Margem {prod['Margem %']:.1f}% - Considere promover!")
-                else:
-                    st.info("Nenhuma oportunidade identificada no momento.")
-        
-        with col2:
-            st.markdown("### ⚠️ Alertas")
-            
-            # Produtos com estoque baixo
-            produtos_baixo = ProdutoService.produtos_estoque_baixo(db)
-            if produtos_baixo:
-                st.warning(f"📦 **{len(produtos_baixo)} produto(s) com estoque baixo:**")
-                for prod in produtos_baixo[:5]:
-                    st.markdown(f"- **{prod.nome}**: {prod.estoque_atual} {prod.unidade} (mín: {prod.estoque_minimo})")
-            else:
-                st.success("✅ Todos os produtos com estoque adequado!")
-    
-    else:
-        st.info("📊 Nenhuma venda registrada no período selecionado. Selecione outro período ou registre vendas primeiro.")
 
-except Exception as e:
-    st.error(f"❌ Erro ao carregar dashboard: {str(e)}")
-    st.exception(e)
+    if df_vendas.empty:
+        empty_state(
+            "analytics",
+            "Sem vendas no período",
+            "Selecione outro intervalo ou registre vendas para gerar os indicadores.",
+        )
+        st.stop()
+
+    dias = (data_fim - data_inicio).days + 1
+    faturamento = float(df_vendas["Total"].sum())
+    qtd_vendas = int(df_vendas["Quantidade"].sum())
+    ticket = faturamento / qtd_vendas if qtd_vendas else 0.0
+
+    anterior = RelatorioService.vendas_por_periodo(
+        db, data_inicio - timedelta(days=dias), data_inicio - timedelta(days=1)
+    )
+    total_anterior = float(anterior["Total"].sum()) if not anterior.empty else 0.0
+    variacao = (
+        (faturamento - total_anterior) / total_anterior * 100 if total_anterior > 0 else None
+    )
+    produtos_baixo = ProdutoService.produtos_estoque_baixo(db)
+
+    kpi_row(
+        [
+            kpi_card(
+                "Faturamento",
+                brl(faturamento),
+                "money",
+                delta=signed_pct(variacao) if variacao is not None else "sem base",
+                delta_tone=("pos" if variacao >= 0 else "neg") if variacao is not None else "neutral",
+                hint="vs. período anterior",
+                tone="brand",
+            ),
+            kpi_card(
+                "Vendas",
+                num(qtd_vendas),
+                "receipt",
+                hint=f"em {plural(dias, 'dia', 'dias')}",
+                tone="pos",
+            ),
+            kpi_card("Ticket médio", brl(ticket), "target"),
+            kpi_card(
+                "Estoque em alerta",
+                num(len(produtos_baixo)),
+                "alert",
+                delta="repor" if produtos_baixo else "tudo certo",
+                delta_tone="neg" if produtos_baixo else "pos",
+                tone="neg" if produtos_baixo else "neutral",
+            ),
+        ]
+    )
+
+    # ------------------------------------------------------------------- vendas
+    if "Vendas" in blocos:
+        section("line_chart", "Evolução das vendas")
+        c_graf, c_stats = st.columns([2.2, 1], gap="large")
+        with c_graf:
+            st.plotly_chart(
+                charts.area_line(
+                    df_vendas["Data"], df_vendas["Total"], "Faturamento", "Faturamento diário"
+                ),
+                width="stretch",
+            )
+        with c_stats:
+            melhor = df_vendas.loc[df_vendas["Total"].idxmax()]
+            kpi_row([kpi_card("Melhor dia", brl(melhor["Total"]), "trophy",
+                              hint=data_br(melhor["Data"]), tone="pos")])
+            st.write("")
+            kpi_row([kpi_card("Média diária", brl(df_vendas["Total"].mean()), "bar_chart")])
+            st.write("")
+            kpi_row([kpi_card("Menor dia", brl(df_vendas["Total"].min()), "trending_down")])
+
+    # ----------------------------------------------------------------- produtos
+    df_produtos = None
+    if "Produtos" in blocos:
+        section("trophy", "Produtos mais vendidos")
+        df_produtos = RelatorioService.produtos_mais_vendidos(db, data_inicio, data_fim, top=10)
+
+        if df_produtos.empty:
+            empty_state("box", "Sem itens vendidos no período")
+        else:
+            c1, c2 = st.columns(2, gap="large")
+            with c1:
+                st.plotly_chart(
+                    charts.hbar(
+                        df_produtos["Produto"], df_produtos["Quantidade"], "Volume vendido"
+                    ),
+                    width="stretch",
+                )
+            with c2:
+                top5 = df_produtos.head(5)
+                st.plotly_chart(
+                    charts.donut(
+                        top5["Produto"], top5["Total"], "Top 5 no faturamento"
+                    ),
+                    width="stretch",
+                )
+
+            with st.expander("Ver tabela", icon=material("list")):
+                data_table(
+                    df_produtos.assign(
+                        Total=df_produtos["Total"].map(brl),
+                        Quantidade=df_produtos["Quantidade"].map(num),
+                    )
+                )
+
+    # --------------------------------------------------------------- categorias
+    if "Categorias" in blocos:
+        section("layers", "Desempenho por categoria")
+        df_categorias = RelatorioService.vendas_por_categoria(db, data_inicio, data_fim)
+
+        if df_categorias.empty:
+            empty_state("layers", "Sem dados por categoria")
+        else:
+            c1, c2 = st.columns(2, gap="large")
+            with c1:
+                st.plotly_chart(
+                    charts.donut(
+                        df_categorias["Categoria"],
+                        df_categorias["Total"],
+                        "Faturamento por categoria",
+                    ),
+                    width="stretch",
+                )
+            with c2:
+                st.plotly_chart(
+                    charts.vbar(
+                        df_categorias["Categoria"],
+                        df_categorias["Quantidade"],
+                        "Volume por categoria",
+                    ),
+                    width="stretch",
+                )
+
+            lider = df_categorias.loc[df_categorias["Total"].idxmax()]
+            notice(
+                f"Categoria líder: <strong>{lider['Categoria']}</strong>, "
+                f"com {brl(lider['Total'])} no período.",
+                "success",
+                icon_name="trophy",
+            )
+
+    # --------------------------------------------------------------- pagamentos
+    if "Pagamentos" in blocos:
+        section("card", "Formas de pagamento")
+        df_pag = RelatorioService.vendas_por_metodo_pagamento(db, data_inicio, data_fim)
+
+        if df_pag.empty:
+            empty_state("card", "Sem dados de pagamento")
+        else:
+            c1, c2 = st.columns(2, gap="large")
+            with c1:
+                st.plotly_chart(
+                    charts.hbar(df_pag["Método"], df_pag["Total"], "Faturamento por método"),
+                    width="stretch",
+                )
+            with c2:
+                st.plotly_chart(
+                    charts.donut(
+                        df_pag["Método"], df_pag["Quantidade"], "Transações por método"
+                    ),
+                    width="stretch",
+                )
+
+    # -------------------------------------------------------------------- caixa
+    if "Caixa" in blocos:
+        section("wallet", "Fluxo de caixa")
+        df_fluxo = RelatorioService.fluxo_caixa(db, data_inicio, data_fim)
+
+        if df_fluxo.empty:
+            empty_state("wallet", "Sem movimentação de caixa no período")
+        else:
+            entradas = float(df_fluxo["entrada"].sum())
+            saidas = float(df_fluxo["saida"].sum())
+            saldo = entradas - saidas
+            acumulado = float(df_fluxo["saldo_acumulado"].iloc[-1])
+
+            kpi_row(
+                [
+                    kpi_card("Entradas", brl(entradas), "cash_in", tone="pos"),
+                    kpi_card("Saídas", brl(saidas), "cash_out", tone="neg"),
+                    kpi_card(
+                        "Resultado",
+                        brl(saldo),
+                        "bank",
+                        delta="positivo" if saldo >= 0 else "negativo",
+                        delta_tone="pos" if saldo >= 0 else "neg",
+                        tone="brand",
+                    ),
+                    kpi_card("Saldo acumulado", brl(acumulado), "wallet"),
+                ]
+            )
+            st.plotly_chart(
+                charts.cashflow(
+                    df_fluxo["data"],
+                    df_fluxo["entrada"],
+                    df_fluxo["saida"],
+                    df_fluxo["saldo_acumulado"],
+                    "Entradas, saídas e saldo acumulado",
+                ),
+                width="stretch",
+            )
+
+    # ------------------------------------------------------------------- margem
+    df_lucro = None
+    if "Margem" in blocos:
+        section("percent", "Margem por produto")
+        df_lucro = RelatorioService.lucro_por_produto(db, data_inicio, data_fim)
+
+        if df_lucro.empty:
+            empty_state("percent", "Sem dados de margem no período")
+        else:
+            top_lucro = df_lucro.nlargest(10, "Lucro")
+            lucro_total = float(df_lucro["Lucro"].sum())
+            receita_total = float(df_lucro["Receita"].sum())
+            margem_geral = lucro_total / receita_total * 100 if receita_total else 0.0
+            campeao = df_lucro.loc[df_lucro["Lucro"].idxmax()]
+
+            kpi_row(
+                [
+                    kpi_card("Lucro bruto", brl(lucro_total), "money", tone="pos"),
+                    kpi_card("Margem geral", pct(margem_geral), "percent", tone="brand"),
+                    kpi_card(
+                        "Produto mais lucrativo",
+                        str(campeao["Produto"]),
+                        "trophy",
+                        hint=brl(campeao["Lucro"]),
+                    ),
+                ]
+            )
+
+            c1, c2 = st.columns(2, gap="large")
+            with c1:
+                st.plotly_chart(
+                    charts.hbar(
+                        top_lucro["Produto"], top_lucro["Lucro"], "Lucro por produto", charts.POS
+                    ),
+                    width="stretch",
+                )
+            with c2:
+                st.plotly_chart(
+                    charts.hbar(
+                        top_lucro["Produto"],
+                        top_lucro["Margem %"],
+                        "Margem por produto (%)",
+                        charts.BRAND,
+                    ),
+                    width="stretch",
+                )
+
+            with st.expander("Ver tabela completa", icon=material("list")):
+                data_table(
+                    df_lucro.assign(
+                        Receita=df_lucro["Receita"].map(brl),
+                        Custo=df_lucro["Custo"].map(brl),
+                        Lucro=df_lucro["Lucro"].map(brl),
+                        **{"Margem %": df_lucro["Margem %"].map(pct)},
+                    )
+                )
+
+    # ---------------------------------------------------------------- destaques
+    section("bulb", "Destaques", "Leituras automáticas a partir dos dados do período.")
+    c1, c2 = st.columns(2, gap="large")
+
+    with c1:
+        if df_lucro is not None and not df_lucro.empty:
+            oportunidades = df_lucro[
+                (df_lucro["Margem %"] > 50)
+                & (df_lucro["Quantidade"] < df_lucro["Quantidade"].median())
+            ].head(3)
+            if oportunidades.empty:
+                notice("Nenhum produto com margem alta e giro baixo neste período.", "info")
+            else:
+                itens = "".join(
+                    f"<li><strong>{linha['Produto']}</strong> — margem "
+                    f"{pct(linha['Margem %'])}, giro abaixo da mediana</li>"
+                    for _, linha in oportunidades.iterrows()
+                )
+                notice(
+                    "Margem alta e giro baixo. Vale destacar no balcão ou em combo:"
+                    f"<ul style='margin:6px 0 0 18px;padding:0'>{itens}</ul>",
+                    "success",
+                    icon_name="trending_up",
+                )
+        else:
+            notice("Ative o bloco Margem para ver oportunidades de mix.", "info")
+
+    with c2:
+        if produtos_baixo:
+            itens = "".join(
+                f"<li><strong>{p.nome}</strong> — {p.estoque_atual} {p.unidade} "
+                f"(mínimo {p.estoque_minimo})</li>"
+                for p in produtos_baixo[:5]
+            )
+            notice(
+                f"{plural(len(produtos_baixo), 'produto precisa', 'produtos precisam')} "
+                "de reposição:"
+                f"<ul style='margin:6px 0 0 18px;padding:0'>{itens}</ul>",
+                "warning",
+            )
+        else:
+            notice("Estoque dentro do mínimo em todos os produtos.", "success")
+
+    # ---------------------------------------------------------------- exportação
+    section("download", "Exportar")
+    c1, c2, c3 = st.columns(3)
+    with c1:
+        download_csv(
+            df_vendas, f"vendas_{data_inicio}_{data_fim}.csv", "Vendas", key="exp_vendas"
+        )
+    with c2:
+        if df_produtos is not None and not df_produtos.empty:
+            download_csv(
+                df_produtos,
+                f"produtos_{data_inicio}_{data_fim}.csv",
+                "Produtos",
+                key="exp_produtos",
+            )
+    with c3:
+        if df_lucro is not None and not df_lucro.empty:
+            download_csv(
+                df_lucro, f"margem_{data_inicio}_{data_fim}.csv", "Margem", key="exp_margem"
+            )
 
 finally:
     db.close()

@@ -1,303 +1,281 @@
-import streamlit as st
-from config.database import init_db, SessionLocal
-from services.auth_service import AuthService
-from models.database_models import Usuario
 import sys
+from datetime import date, timedelta
 from pathlib import Path
 
-# Configuração da página
+import streamlit as st
+
+ROOT = Path(__file__).resolve().parent
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from ui.icons import icon, material  # noqa: E402
+from ui.theme import apply_theme  # noqa: E402
+
+# Ler a sessão antes de renderizar permite abrir a tela de login sem a barra
+# lateral, que só faz sentido depois da autenticação.
+_autenticado = bool(st.session_state.get("authenticated"))
+
 st.set_page_config(
     page_title="ERP Cafeteria",
-    page_icon="☕",
+    page_icon=material("coffee"),
     layout="wide",
-    initial_sidebar_state="expanded"
+    initial_sidebar_state="expanded" if _autenticado else "collapsed",
 )
+apply_theme(login=not _autenticado)
 
-# Adicionar o diretório raiz ao path
-root_path = Path(__file__).parent
-sys.path.append(str(root_path))
+from config.database import SessionLocal, init_db  # noqa: E402
+from models.database_models import Usuario  # noqa: E402
+from services.auth_service import AuthService  # noqa: E402
+from services.produto_service import ProdutoService  # noqa: E402
+from services.relatorio_service import RelatorioService  # noqa: E402
+from ui import charts  # noqa: E402
+from ui.components import (  # noqa: E402
+    empty_state,
+    kpi_card,
+    kpi_row,
+    notice,
+    page_header,
+    section,
+)
+from ui.format import brl, data_br, num, plural  # noqa: E402
+from ui.page import sidebar_shell  # noqa: E402
 
-# CSS customizado
-st.markdown("""
-<style>
-    .main-header {
-        font-size: 2.5rem;
-        font-weight: bold;
-        color: #6F4E37;
-        text-align: center;
-        padding: 1rem 0;
-    }
-    .metric-card {
-        background-color: #f0f2f6;
-        padding: 1rem;
-        border-radius: 0.5rem;
-        border-left: 4px solid #6F4E37;
-    }
-    .stAlert {
-        border-radius: 0.5rem;
-    }
-</style>
-""", unsafe_allow_html=True)
+USUARIOS_PADRAO = [
+    {"nome_usuario": "admin", "senha": "admin123", "nivel_acesso": "admin"},
+    {"nome_usuario": "gerente", "senha": "gerente123", "nivel_acesso": "Gerente"},
+    {"nome_usuario": "funcionario", "senha": "funcionario123", "nivel_acesso": "funcionario"},
+]
 
-# Inicializar banco de dados
-@st.cache_resource
-def initialize_database():
+
+@st.cache_resource(show_spinner=False)
+def initialize_database() -> list:
+    """Cria o schema e as contas padrão. Retorna as contas criadas nesta execução."""
     init_db()
+    criados = []
     db = SessionLocal()
-    
-    # Criar usuário admin padrão se não existir
-    admin_exists = db.query(Usuario).filter(Usuario.nome_usuario == "admin").first()
-    if not admin_exists:
-        AuthService.criar_usuario(
-            db=db,
-            nome_usuario="admin",
-            senha="admin123",
-            nivel_acesso="admin"
-        )
-        st.success("✅ Usuário admin criado! Login: admin | Senha: admin123")
-    
-    db.close()
-
-# Inicializar session state
-if 'authenticated' not in st.session_state:
-    st.session_state.authenticated = False
-if 'user' not in st.session_state:
-    st.session_state.user = None
-if 'db_initialized' not in st.session_state:
-    initialize_database()
-    st.session_state.db_initialized = True
-
-# Função de login
-def login_page():
-    st.markdown('<p class="main-header">☕ ERP Cafeteria</p>', unsafe_allow_html=True)
-    
-    col1, col2, col3 = st.columns([1, 2, 1])
-    
-    with col2:
-        st.markdown("### 🔐 Login")
-        
-        with st.form("login_form"):
-            username = st.text_input("Usuário", placeholder="Digite seu usuário")
-            password = st.text_input("Senha", type="password", placeholder="Digite sua senha")
-            submit = st.form_submit_button("Entrar", use_container_width=True)
-            
-            if submit:
-                if username and password:
-                    db = SessionLocal()
-                    user = AuthService.authenticate(db, username, password)
-                    
-                    if user:
-                        # Extrair todos os dados do usuário ANTES de fechar a sessão
-                        user_data = {
-                            'id': user.id,
-                            'username': user.nome_usuario,
-                            'nivel_acesso': user.nivel_acesso,
-                            'funcionario_id': user.funcionario_id
-                        }
-                        db.close()  # Fechar a sessão aqui
-                        
-                        st.session_state.authenticated = True
-                        st.session_state.user = user_data
-                        st.rerun()
-                    else:
-                        db.close()
-                        st.error("❌ Usuário ou senha inválidos!")
-                else:
-                    st.warning("⚠️ Por favor, preencha todos os campos!")
-        
-        st.divider() 
-
-# Função de logout
-def logout():
-    st.session_state.authenticated = False
-    st.session_state.user = None
-    st.rerun()
-
-# Página principal (Dashboard)
-def main_page():
-    st.markdown('<p class="main-header">☕ Sistema ERP - Cafeteria</p>', unsafe_allow_html=True)
-    
-    # Sidebar
-    with st.sidebar:
-        st.markdown(f"### 👤 {st.session_state.user['username']}")
-        st.markdown(f"**Nível:** {st.session_state.user['nivel_acesso'].upper()}")
-        st.divider()
-        
-        if st.button("🚪 Sair", use_container_width=True):
-            logout()
-    
-    # Dashboard principal
-    st.markdown("## 📊 Dashboard Geral")
-    
-    db = SessionLocal()
-    
     try:
-        from services.produto_service import ProdutoService
-        from services.relatorio_service import RelatorioService
-        from datetime import date, timedelta
-        
-        # Métricas principais
-        col1, col2, col3, col4 = st.columns(4)
-        
+        for dados in USUARIOS_PADRAO:
+            existe = (
+                db.query(Usuario)
+                .filter(Usuario.nome_usuario == dados["nome_usuario"])
+                .first()
+            )
+            if not existe:
+                AuthService.criar_usuario(db=db, **dados)
+                criados.append(dados["nome_usuario"])
+    finally:
+        db.close()
+    return criados
+
+
+st.session_state.setdefault("authenticated", False)
+st.session_state.setdefault("user", None)
+contas_criadas = initialize_database()
+
+
+# --------------------------------------------------------------------------- #
+# Login
+# --------------------------------------------------------------------------- #
+def login_page():
+    st.markdown(
+        '<div style="height:6vh"></div>'
+        '<div style="display:flex;flex-direction:column;align-items:center;gap:4px;">'
+        '<div class="erp-head-mark" style="width:52px;height:52px;">'
+        f'{icon("coffee", 26)}</div>'
+        '<p class="erp-head-eyebrow" style="margin:10px 0 0;">'
+        "Gestão e inteligência de negócio</p>"
+        '<h1 class="erp-head-title" style="font-size:1.7rem;">ERP Cafeteria</h1>'
+        "</div>",
+        unsafe_allow_html=True,
+    )
+
+    _, meio, _ = st.columns([1, 1.25, 1])
+    with meio:
+        with st.form("login"):
+            usuario = st.text_input("Usuário", placeholder="Seu nome de usuário")
+            senha = st.text_input("Senha", type="password", placeholder="Sua senha")
+            entrar = st.form_submit_button(
+                "Entrar", width="stretch", type="primary", icon=material("login")
+            )
+
+        if entrar:
+            if not usuario or not senha:
+                notice("Preencha usuário e senha para continuar.", "warning")
+                return
+
+            db = SessionLocal()
+            try:
+                user = AuthService.authenticate(db, usuario, senha)
+                if user is None:
+                    notice("Usuário ou senha incorretos. Verifique e tente de novo.", "error")
+                    return
+                st.session_state.user = {
+                    "id": user.id,
+                    "username": user.nome_usuario,
+                    "nivel_acesso": user.nivel_acesso,
+                    "funcionario_id": user.funcionario_id,
+                }
+            finally:
+                db.close()
+
+            st.session_state.authenticated = True
+            st.rerun()
+
+        if contas_criadas:
+            notice(
+                "Primeiro acesso. Contas criadas: <strong>"
+                + "</strong>, <strong>".join(contas_criadas)
+                + "</strong>. A senha inicial é o nome do usuário seguido de 123. "
+                "Troque-a em Funcionários depois de entrar.",
+                "info",
+                icon_name="key",
+            )
+
+
+# --------------------------------------------------------------------------- #
+# Painel geral
+# --------------------------------------------------------------------------- #
+def dashboard():
+    user = st.session_state.user
+    page_header(
+        "dashboard",
+        "Visão geral",
+        "Resultado do mês corrente, estoque e vendas recentes.",
+    )
+
+    sidebar_shell(user)
+
+    db = SessionLocal()
+    try:
         hoje = date.today()
-        inicio_mes = date(hoje.year, hoje.month, 1)
-        
-        # Total de vendas do mês
+        inicio_mes = hoje.replace(day=1)
+
         vendas_mes = RelatorioService.vendas_por_periodo(db, inicio_mes, hoje)
-        total_vendas = vendas_mes['Total'].sum() if not vendas_mes.empty else 0
-        
-        with col1:
-            st.markdown('<div class="metric-card">', unsafe_allow_html=True)
-            st.metric(
-                label="💰 Vendas do Mês",
-                value=f"R$ {total_vendas:,.2f}",
-                delta=f"{len(vendas_mes)} vendas"
-            )
-            st.markdown('</div>', unsafe_allow_html=True)
-        
-        # Produtos em estoque baixo
-        produtos_baixo = ProdutoService.produtos_estoque_baixo(db)
-        
-        with col2:
-            st.markdown('<div class="metric-card">', unsafe_allow_html=True)
-            st.metric(
-                label="⚠️ Estoque Baixo",
-                value=len(produtos_baixo),
-                delta="produtos" if len(produtos_baixo) != 1 else "produto",
-                delta_color="inverse"
-            )
-            st.markdown('</div>', unsafe_allow_html=True)
-        
-        # Total de produtos ativos
-        produtos_ativos = len(ProdutoService.listar_produtos(db))
-        
-        with col3:
-            st.markdown('<div class="metric-card">', unsafe_allow_html=True)
-            st.metric(
-                label="📦 Produtos Ativos",
-                value=produtos_ativos,
-                delta="cadastrados"
-            )
-            st.markdown('</div>', unsafe_allow_html=True)
-        
-        # Vendas hoje
+        total_mes = float(vendas_mes["Total"].sum()) if not vendas_mes.empty else 0.0
+        qtd_mes = int(vendas_mes["Quantidade"].sum()) if not vendas_mes.empty else 0
+
         vendas_hoje = RelatorioService.vendas_por_periodo(db, hoje, hoje)
-        total_hoje = vendas_hoje['Total'].sum() if not vendas_hoje.empty else 0
-        
-        with col4:
-            st.markdown('<div class="metric-card">', unsafe_allow_html=True)
-            st.metric(
-                label="💵 Vendas Hoje",
-                value=f"R$ {total_hoje:,.2f}",
-                delta="hoje"
-            )
-            st.markdown('</div>', unsafe_allow_html=True)
-        
-        st.divider()
-        
-        # Alertas de estoque baixo
+        total_hoje = float(vendas_hoje["Total"].sum()) if not vendas_hoje.empty else 0.0
+        qtd_hoje = int(vendas_hoje["Quantidade"].sum()) if not vendas_hoje.empty else 0
+
+        produtos_baixo = ProdutoService.produtos_estoque_baixo(db)
+        produtos_ativos = len(ProdutoService.listar_produtos(db))
+
+        kpi_row(
+            [
+                kpi_card(
+                    "Faturamento do mês",
+                    brl(total_mes),
+                    "money",
+                    delta=plural(qtd_mes, "venda", "vendas"),
+                    delta_tone="brand",
+                    hint=f"desde {data_br(inicio_mes)}",
+                    tone="brand",
+                ),
+                kpi_card(
+                    "Vendas de hoje",
+                    brl(total_hoje),
+                    "receipt",
+                    delta=plural(qtd_hoje, "venda", "vendas"),
+                    delta_tone="pos" if qtd_hoje else "neutral",
+                    tone="pos",
+                ),
+                kpi_card(
+                    "Estoque em alerta",
+                    num(len(produtos_baixo)),
+                    "alert",
+                    delta="repor" if produtos_baixo else "tudo certo",
+                    delta_tone="neg" if produtos_baixo else "pos",
+                    tone="neg" if produtos_baixo else "neutral",
+                ),
+                kpi_card("Produtos ativos", num(produtos_ativos), "box", hint="no catálogo"),
+            ]
+        )
+
         if produtos_baixo:
-            st.warning(f"⚠️ **Atenção:** {len(produtos_baixo)} produto(s) com estoque baixo!")
-            
-            with st.expander("Ver produtos com estoque baixo"):
-                for produto in produtos_baixo:
-                    st.markdown(f"""
-                    - **{produto.nome}** 
-                      - Estoque atual: {produto.estoque_atual} {produto.unidade}
-                      - Estoque mínimo: {produto.estoque_minimo} {produto.unidade}
-                    """)
-        
-        # Gráfico de vendas dos últimos 7 dias
-        st.markdown("### 📈 Vendas dos Últimos 7 Dias")
-        
-        inicio_semana = hoje - timedelta(days=7)
-        vendas_semana = RelatorioService.vendas_por_periodo(db, inicio_semana, hoje)
-        
-        if not vendas_semana.empty:
-            import plotly.express as px
-            
-            fig = px.bar(
-                vendas_semana,
-                x='Data',
-                y='Total',
-                title='Evolução das Vendas',
-                labels={'Total': 'Valor Total (R$)', 'Data': 'Data'},
-                color='Total',
-                color_continuous_scale='Blues'
+            section("alert", "Reposição necessária")
+            notice(
+                f"<strong>{plural(len(produtos_baixo), 'produto está', 'produtos estão')}"
+                " no nível mínimo ou abaixo dele.</strong>",
+                "warning",
             )
-            fig.update_layout(
-                showlegend=False,
-                height=400,
-                hovermode='x unified'
+            with st.expander("Ver itens", icon=material("box")):
+                for p in produtos_baixo:
+                    st.markdown(
+                        f"**{p.nome}** — {p.estoque_atual} {p.unidade} "
+                        f"(mínimo {p.estoque_minimo} {p.unidade})"
+                    )
+
+        section("line_chart", "Vendas dos últimos 7 dias")
+        semana = RelatorioService.vendas_por_periodo(db, hoje - timedelta(days=6), hoje)
+        if semana.empty:
+            empty_state(
+                "line_chart",
+                "Sem vendas na última semana",
+                "Registre uma venda para acompanhar a evolução por aqui.",
             )
-            st.plotly_chart(fig, use_container_width=True)
         else:
-            st.info("📊 Nenhuma venda registrada nos últimos 7 dias.")
-        
-        # Produtos mais vendidos
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            st.markdown("### 🏆 Top 5 Produtos Mais Vendidos")
-            top_produtos = RelatorioService.produtos_mais_vendidos(db, inicio_mes, hoje, top=5)
-            
-            if not top_produtos.empty:
-                import plotly.express as px
-                
-                fig = px.pie(
-                    top_produtos,
-                    values='Quantidade',
-                    names='Produto',
-                    title='Distribuição de Vendas'
-                )
-                fig.update_traces(textposition='inside', textinfo='percent+label')
-                st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(
+                charts.area_line(
+                    semana["Data"], semana["Total"], "Faturamento", "Faturamento diário"
+                ),
+                width="stretch",
+            )
+
+        col_a, col_b = st.columns(2)
+        with col_a:
+            section("trophy", "Produtos mais vendidos")
+            top = RelatorioService.produtos_mais_vendidos(db, inicio_mes, hoje, top=5)
+            if top.empty:
+                empty_state("box", "Sem dados no mês")
             else:
-                st.info("📊 Nenhum dado disponível.")
-        
-        with col2:
-            st.markdown("### 💳 Vendas por Método de Pagamento")
+                st.plotly_chart(
+                    charts.donut(top["Produto"], top["Quantidade"], "Participação por volume"),
+                    width="stretch",
+                )
+
+        with col_b:
+            section("card", "Formas de pagamento")
             metodos = RelatorioService.vendas_por_metodo_pagamento(db, inicio_mes, hoje)
-            
-            if not metodos.empty:
-                import plotly.express as px
-                
-                fig = px.bar(
-                    metodos,
-                    x='Método',
-                    y='Total',
-                    title='Faturamento por Forma de Pagamento',
-                    color='Total',
-                    color_continuous_scale='Greens'
-                )
-                fig.update_layout(showlegend=False)
-                st.plotly_chart(fig, use_container_width=True)
+            if metodos.empty:
+                empty_state("card", "Sem dados no mês")
             else:
-                st.info("📊 Nenhum dado disponível.")
-        
-        # Informações rápidas
-        st.divider()
-        st.markdown("### 🎯 Acesso Rápido")
-        
-        col1, col2, col3 = st.columns(3)
-        
-        with col1:
-            st.page_link("pages/Produtos.py", label="📦 Gerenciar Produtos", use_container_width=True)
-        
-        with col2:
-            st.page_link("pages/Vendas.py", label="🧾 Registrar Venda", use_container_width=True)
-        
-        with col3:
-            st.page_link("pages/BI_Dashboard.py", label="📊 Ver Relatórios", use_container_width=True)
-        
-    except Exception as e:
-        st.error(f"❌ Erro ao carregar dashboard: {str(e)}")
-    
+                st.plotly_chart(
+                    charts.hbar(metodos["Método"], metodos["Total"], "Faturamento por método"),
+                    width="stretch",
+                )
+
+        section("dashboard", "Atalhos")
+        c1, c2, c3 = st.columns(3)
+        with c1:
+            st.page_link(
+                "pages/Vendas.py",
+                label="Registrar venda",
+                icon=material("cart"),
+                width="stretch",
+            )
+        with c2:
+            st.page_link(
+                "pages/Produtos.py",
+                label="Gerenciar produtos",
+                icon=material("box"),
+                width="stretch",
+            )
+        with c3:
+            st.page_link(
+                "pages/BI_Dashboard.py",
+                label="Abrir relatórios",
+                icon=material("analytics"),
+                width="stretch",
+            )
+
+    except Exception as erro:  # superfície de UI
+        notice(f"Não foi possível carregar o painel: {erro}", "error")
     finally:
         db.close()
 
-# Controle de fluxo
-if not st.session_state.authenticated:
-    login_page()
+
+if st.session_state.authenticated:
+    dashboard()
 else:
-    main_page()
+    login_page()

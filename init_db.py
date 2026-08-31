@@ -147,11 +147,11 @@ def criar_produtos_exemplo():
                 db.add(produto)
         
         db.commit()
-        print("✅ Produtos de exemplo criados com sucesso!")
+        print("[ok] Produtos de exemplo criados com sucesso!")
         return True
     except Exception as e:
         db.rollback()
-        print(f"❌ Erro ao criar produtos: {str(e)}")
+        print(f"[erro] Erro ao criar produtos: {str(e)}")
         return False
     finally:
         db.close()
@@ -163,21 +163,21 @@ def criar_funcionarios_exemplo():
     funcionarios_exemplo = [
         {
             'nome': 'Maria Silva',
-            'cargo': 'gerente',
+            'cargo': 'Gerente',
             'telefone': '(41) 99999-0001',
             'email': 'maria.silva@cafeteria.com',
             'data_admissao': date(2024, 1, 15)
         },
         {
             'nome': 'João Santos',
-            'cargo': 'barista',
+            'cargo': 'funcionario',
             'telefone': '(41) 99999-0002',
             'email': 'joao.santos@cafeteria.com',
             'data_admissao': date(2024, 3, 1)
         },
         {
             'nome': 'Ana Costa',
-            'cargo': 'caixa',
+            'cargo': 'funcionario',
             'telefone': '(41) 99999-0003',
             'email': 'ana.costa@cafeteria.com',
             'data_admissao': date(2024, 4, 10)
@@ -196,11 +196,11 @@ def criar_funcionarios_exemplo():
                 db.add(funcionario)
         
         db.commit()
-        print("✅ Funcionários de exemplo criados com sucesso!")
+        print("[ok] Funcionários de exemplo criados com sucesso!")
         return True
     except Exception as e:
         db.rollback()
-        print(f"❌ Erro ao criar funcionários: {str(e)}")
+        print(f"[erro] Erro ao criar funcionários: {str(e)}")
         return False
     finally:
         db.close()
@@ -222,29 +222,45 @@ def criar_usuarios_sistema():
                 senha="admin123",
                 nivel_acesso="admin"
             )
-            print("✅ Usuário admin criado (usuario: admin, senha: admin123)")
+            print("[ok] Usuário admin criado (usuario: admin, senha: admin123)")
         else:
-            print("ℹ️  Usuário admin já existe")
+            print("[info] Usuário admin já existe")
         
-        # Criar usuário caixa
-        caixa_existe = db.query(Usuario).filter(
-            Usuario.nome_usuario == "caixa"
+        # Criar usuário gerente
+        gerente_existe = db.query(Usuario).filter(
+            Usuario.nome_usuario == "gerente"
         ).first()
         
-        if not caixa_existe:
+        if not gerente_existe:
             AuthService.criar_usuario(
                 db=db,
-                nome_usuario="caixa",
-                senha="caixa123",
-                nivel_acesso="caixa"
+                nome_usuario="gerente",
+                senha="gerente123",
+                nivel_acesso="Gerente"
             )
-            print("✅ Usuário caixa criado (usuario: caixa, senha: caixa123)")
+            print("[ok] Usuário gerente criado (usuario: gerente, senha: gerente123)")
         else:
-            print("ℹ️  Usuário caixa já existe")
+            print("[info] Usuário gerente já existe")
+
+        # Criar usuário funcionário
+        funcionario_existe = db.query(Usuario).filter(
+            Usuario.nome_usuario == "funcionario"
+        ).first()
+        
+        if not funcionario_existe:
+            AuthService.criar_usuario(
+                db=db,
+                nome_usuario="funcionario",
+                senha="funcionario123",
+                nivel_acesso="funcionario"
+            )
+            print("[ok] Usuário funcionário criado (usuario: funcionario, senha: funcionario123)")
+        else:
+            print("[info] Usuário funcionário já existe")
         
         return True
     except Exception as e:
-        print(f"❌ Erro ao criar usuários: {str(e)}")
+        print(f"[erro] Erro ao criar usuários: {str(e)}")
         return False
     finally:
         db.close()
@@ -257,44 +273,47 @@ def inicializar_sistema(criar_dados_exemplo=True):
         criar_dados_exemplo: Se True, cria produtos e funcionários de exemplo
     """
     print("=" * 60)
-    print("🚀 INICIALIZANDO SISTEMA ERP CAFETERIA")
+    print("INICIALIZANDO SISTEMA ERP CAFETERIA")
     print("=" * 60)
     
     # Criar estrutura do banco
-    print("\n📊 Criando estrutura do banco de dados...")
+    print("\n[1/3] Criando estrutura do banco de dados...")
     try:
         init_db()
-        print("✅ Estrutura do banco criada com sucesso!")
+        print("[ok] Estrutura do banco criada com sucesso!")
     except Exception as e:
-        print(f"❌ Erro ao criar estrutura: {str(e)}")
+        print(f"[erro] Erro ao criar estrutura: {str(e)}")
         return False
     
     # Criar usuários do sistema
-    print("\n👤 Criando usuários do sistema...")
+    print("\n[2/3] Criando usuarios do sistema...")
     if not criar_usuarios_sistema():
         return False
     
     # Criar dados de exemplo (opcional)
     if criar_dados_exemplo:
-        print("\n📦 Criando dados de exemplo...")
+        print("\n[3/3] Criando dados de exemplo...")
         
         criar_produtos_exemplo()
         criar_funcionarios_exemplo()
     
     print("\n" + "=" * 60)
-    print("✅ SISTEMA INICIALIZADO COM SUCESSO!")
+    print("SISTEMA INICIALIZADO COM SUCESSO")
     print("=" * 60)
-    print("\n🔐 CREDENCIAIS DE ACESSO:")
+    print("\nCREDENCIAIS DE ACESSO")
     print("-" * 60)
-    print("👨‍💼 ADMINISTRADOR")
+    print("ADMINISTRADOR")
     print("   Usuário: admin")
     print("   Senha: admin123")
-    print("\n💼 OPERADOR DE CAIXA")
-    print("   Usuário: caixa")
-    print("   Senha: caixa123")
+    print("\nGERENTE")
+    print("   Usuário: gerente")
+    print("   Senha: gerente123")
+    print("\nFUNCIONARIO")
+    print("   Usuário: funcionario")
+    print("   Senha: funcionario123")
     print("-" * 60)
-    print("\n⚠️  IMPORTANTE: Altere as senhas padrão após o primeiro acesso!")
-    print("\n🚀 Para iniciar o sistema, execute:")
+    print("\nIMPORTANTE: Altere as senhas padrão após o primeiro acesso!")
+    print("\nPara iniciar o sistema, execute:")
     print("   streamlit run app.py")
     print("=" * 60)
     
@@ -306,7 +325,7 @@ def resetar_banco():
     """
     import os
     
-    print("⚠️  ATENÇÃO: Esta ação irá DELETAR todos os dados!")
+    print("ATENCAO: Esta ação irá DELETAR todos os dados!")
     confirmacao = input("Digite 'CONFIRMAR' para prosseguir: ")
     
     if confirmacao == "CONFIRMAR":
@@ -314,14 +333,14 @@ def resetar_banco():
             # Remover arquivo SQLite (se existir)
             if os.path.exists("cafeteria.db"):
                 os.remove("cafeteria.db")
-                print("✅ Banco de dados removido!")
+                print("[ok] Banco de dados removido!")
             
             # Reinicializar
             inicializar_sistema(criar_dados_exemplo=True)
         except Exception as e:
-            print(f"❌ Erro ao resetar banco: {str(e)}")
+            print(f"[erro] Erro ao resetar banco: {str(e)}")
     else:
-        print("❌ Operação cancelada!")
+        print("[erro] Operação cancelada!")
 
 if __name__ == "__main__":
     import sys

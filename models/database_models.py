@@ -137,13 +137,17 @@ class Funcionario(Base):
     usuario = relationship("Usuario", back_populates="funcionario", uselist=False)
     vendas = relationship("Venda", back_populates="funcionario")
 
+    __table_args__ = (
+        CheckConstraint("cargo IN ('admin', 'Gerente', 'funcionario')", name='check_cargo'),
+    )
+
 class Usuario(Base):
     __tablename__ = "usuarios"
     
     id = Column(Integer, primary_key=True, index=True)
     nome_usuario = Column(String(100), nullable=False, unique=True, index=True)
     senha_hash = Column(String(255), nullable=False)
-    nivel_acesso = Column(String(20), nullable=False, default='caixa')
+    nivel_acesso = Column(String(20), nullable=False, default='funcionario')
     funcionario_id = Column(Integer, ForeignKey("funcionarios.id"), unique=True)
     ativo = Column(Boolean, nullable=False, default=True)
     criado_em = Column(DateTime, server_default=func.now())
@@ -153,5 +157,5 @@ class Usuario(Base):
     funcionario = relationship("Funcionario", back_populates="usuario")
     
     __table_args__ = (
-        CheckConstraint("nivel_acesso IN ('admin', 'caixa')", name='check_nivel_acesso'),
+        CheckConstraint("nivel_acesso IN ('admin', 'Gerente', 'funcionario')", name='check_nivel_acesso'),
     )

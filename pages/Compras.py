@@ -1,281 +1,284 @@
-import streamlit as st
-import pandas as pd
-from config.database import SessionLocal
-from services.compra_service import CompraService
-from services.produto_service import ProdutoService
-from datetime import date
 import sys
+from datetime import date
 from pathlib import Path
 
-root_path = Path(__file__).parent.parent
-sys.path.append(str(root_path))
+import pandas as pd
+import streamlit as st
 
-if 'authenticated' not in st.session_state or not st.session_state.authenticated:
-    st.warning("⚠️ Por favor, faça login primeiro!")
-    st.stop()
+ROOT = Path(__file__).resolve().parent.parent
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 
-# Verificar se user existe e tem os dados necessários
-if not st.session_state.user or 'username' not in st.session_state.user:
-    st.error("❌ Erro de autenticação. Por favor, faça login novamente.")
-    st.stop()
+from ui.page import setup_page  # noqa: E402
 
-st.set_page_config(page_title="Compras", page_icon="🛒", layout="wide")
+user = setup_page(
+    title="Compras",
+    icon_name="truck",
+    heading="Compras e fornecedores",
+    subtitle="Entrada de mercadoria, custo médio e histórico por fornecedor.",
+)
 
-st.markdown("# 🛒 Gerenciamento de Compras")
-st.markdown("---")
+from config.database import SessionLocal  # noqa: E402
+from services.compra_service import CompraService  # noqa: E402
+from services.produto_service import ProdutoService  # noqa: E402
+from ui.components import (  # noqa: E402
+    data_table,
+    definition_list,
+    download_csv,
+    empty_state,
+    kpi_card,
+    kpi_row,
+    line_item,
+    notice,
+    section,
+    sidebar_nav,
+    total_line,
+)
+from ui.format import brl, data_br, num, plural  # noqa: E402
+from ui.icons import material  # noqa: E402
 
-if 'itens_compra' not in st.session_state:
-    st.session_state.itens_compra = []
+METODOS = ["dinheiro", "transferência", "boleto", "cartão crédito", "pix"]
+
+st.session_state.setdefault("itens_compra", [])
 
 with st.sidebar:
-    st.markdown(f"### 👤 {st.session_state.user['username']}")
-    st.divider()
-    
-    opcao = st.radio(
-        "Selecione uma opção:",
-        ["➕ Nova Compra", "📋 Histórico de Compras"],
-        label_visibility="collapsed"
+    opcao = sidebar_nav(
+        [
+            ("nova", "Nova compra", "plus"),
+            ("historico", "Histórico", "list"),
+        ],
+        state_key="nav_compras",
     )
 
 db = SessionLocal()
 
 try:
-    # NOVA COMPRA
-    if opcao == "➕ Nova Compra":
-        st.markdown("## ➕ Registrar Nova Compra")
-        
-        col1, col2 = st.columns([2, 1])
-        
-        with col1:
-            st.markdown("### 📦 Informações da Compra")
-            
-            col_a, col_b = st.columns(2)
-            
-            with col_a:
+    # ---------------------------------------------------------------- nova compra
+    if opcao == "nova":
+        col_form, col_itens = st.columns([2, 1], gap="large")
+
+        with col_form:
+            section("truck", "Dados da compra")
+            c1, c2 = st.columns(2, gap="large")
+            with c1:
                 fornecedor = st.text_input(
-                    "Fornecedor*",
-                    placeholder="Ex: Distribuidora ABC"
+                    "Fornecedor*", placeholder="Ex.: Distribuidora Central"
                 )
                 data_compra = st.date_input(
-                    "Data da Compra",
-                    value=date.today()
+                    "Data da compra", value=date.today(), format="DD/MM/YYYY"
                 )
-            
-            with col_b:
-                metodo_pagamento = st.selectbox(
-                    "Método de Pagamento",
-                    ["dinheiro", "transferência", "boleto", "cartão crédito", "pix"]
-                )
-                observacoes = st.text_area(
-                    "Observações",
-                    placeholder="Informações adicionais..."
-                )
-            
-            st.markdown("---")
-            st.markdown("### Adicionar Itens")
-            
+            with c2:
+                metodo = st.selectbox("Forma de pagamento", METODOS)
+                observacoes = st.text_area("Observações", placeholder="Opcional.")
+
+            section("box", "Itens")
             produtos = ProdutoService.listar_produtos(db, apenas_ativos=True)
-            
-            if produtos:
-                col_prod, col_qtd, col_preco, col_btn = st.columns([3, 1, 1, 1])
-                
-                with col_prod:
-                    opcoes_produtos = {f"{p.nome} ({p.unidade})": p.id for p in produtos}
-                    produto_selecionado = st.selectbox(
-                        "Produto",
-                        options=list(opcoes_produtos.keys()),
-                        key="select_produto_compra"
-                    )
-                
-                with col_qtd:
-                    quantidade = st.number_input(
-                        "Quantidade",
-                        min_value=1,
-                        value=1,
-                        step=1,
-                        key="qtd_compra"
-                    )
-                
-                with col_preco:
-                    preco_unitario = st.number_input(
-                        "Preço Unit. (R$)",
+
+            if not produtos:
+                empty_state(
+                    "box",
+                    "Nenhum produto ativo",
+                    "Cadastre produtos antes de lançar uma compra.",
+                )
+            else:
+                rotulos = {f"{p.nome} ({p.unidade})": p.id for p in produtos}
+                c_prod, c_qtd, c_preco, c_btn = st.columns(
+                    [3, 1, 1.2, 1], vertical_alignment="bottom"
+                )
+                with c_prod:
+                    escolhido = st.selectbox("Produto", options=list(rotulos.keys()))
+                with c_qtd:
+                    quantidade = st.number_input("Quantidade", min_value=1, value=1, step=1)
+                with c_preco:
+                    preco = st.number_input(
+                        "Custo unitário (R$)",
                         min_value=0.01,
                         value=1.00,
                         step=0.50,
                         format="%.2f",
-                        key="preco_compra"
                     )
-                
-                with col_btn:
-                    st.markdown("<br>", unsafe_allow_html=True)
-                    if st.button("➕ Adicionar", use_container_width=True):
-                        produto_id = opcoes_produtos[produto_selecionado]
-                        produto = ProdutoService.buscar_por_id(db, produto_id)
-                        
-                        if produto:
-                            st.session_state.itens_compra.append({
-                                'id_produto': produto.id,
-                                'nome': produto.nome,
-                                'quantidade': quantidade,
-                                'preco_unitario': preco_unitario,
-                                'subtotal': preco_unitario * quantidade
-                            })
-                            st.success(f"✅ {produto.nome} adicionado!")
-                            st.rerun()
-        
-        with col2:
-            st.markdown("### 📋 Itens da Compra")
-            
-            if st.session_state.itens_compra:
-                total_compra = 0
-                
-                for idx, item in enumerate(st.session_state.itens_compra):
-                    with st.container():
-                        col_info, col_remove = st.columns([4, 1])
-                        
-                        with col_info:
-                            st.markdown(f"""
-                            **{item['nome']}**  
-                            {item['quantidade']}x R$ {item['preco_unitario']:.2f} = R$ {item['subtotal']:.2f}
-                            """)
-                        
-                        with col_remove:
-                            if st.button("🗑️", key=f"remove_compra_{idx}"):
-                                st.session_state.itens_compra.pop(idx)
-                                st.rerun()
-                        
-                        st.divider()
-                    
-                    total_compra += item['subtotal']
-                
-                st.markdown(f"### Total: R$ {total_compra:.2f}")
-                
-                st.markdown("---")
-                
-                col_finalizar, col_limpar = st.columns(2)
-                
-                with col_finalizar:
-                    if st.button("✅ Finalizar Compra", use_container_width=True, type="primary"):
-                        if fornecedor and st.session_state.itens_compra:
-                            try:
-                                compra = CompraService.criar_compra(
-                                    db=db,
-                                    data_compra=data_compra,
-                                    fornecedor=fornecedor,
-                                    metodo_pagamento=metodo_pagamento,
-                                    itens=st.session_state.itens_compra,
-                                    observacoes=observacoes if observacoes else None
-                                )
-                                
-                                st.success(f"✅ Compra #{compra.id} finalizada! Estoque atualizado.")
-                                st.balloons()
-                                st.session_state.itens_compra = []
-                                st.rerun()
-                            except Exception as e:
-                                st.error(f"❌ Erro ao finalizar compra: {str(e)}")
-                        else:
-                            st.warning("⚠️ Preencha o fornecedor e adicione pelo menos um item!")
-                
-                with col_limpar:
-                    if st.button("🗑️ Limpar", use_container_width=True):
-                        st.session_state.itens_compra = []
+                with c_btn:
+                    adicionar = st.button(
+                        "Adicionar", width="stretch", icon=material("plus")
+                    )
+
+                if adicionar:
+                    produto = ProdutoService.buscar_por_id(db, rotulos[escolhido])
+                    if produto is None:
+                        notice("Produto não encontrado.", "error")
+                    else:
+                        st.session_state.itens_compra.append(
+                            {
+                                "id_produto": produto.id,
+                                "nome": produto.nome,
+                                "quantidade": quantidade,
+                                "preco_unitario": float(preco),
+                                "subtotal": float(preco) * quantidade,
+                            }
+                        )
                         st.rerun()
+
+        with col_itens:
+            section("receipt", "Resumo")
+
+            if not st.session_state.itens_compra:
+                empty_state("truck", "Nenhum item", "Adicione produtos à compra.")
             else:
-                st.info("📋 Nenhum item adicionado")
-    
-    # HISTÓRICO DE COMPRAS
-    elif opcao == "📋 Histórico de Compras":
-        st.markdown("## 📋 Histórico de Compras")
-        
-        col1, col2, col3 = st.columns(3)
-        
-        with col1:
+                remover = None
+                for idx, item in enumerate(st.session_state.itens_compra):
+                    c_info, c_del = st.columns([3.4, 1.6], vertical_alignment="center")
+                    with c_info:
+                        line_item(
+                            item["nome"],
+                            f"{item['quantidade']} × {brl(item['preco_unitario'])}",
+                            brl(item["subtotal"]),
+                        )
+                    with c_del:
+                        if st.button(
+                            "Remover",
+                            key=f"del_compra_{idx}",
+                            icon=material("trash"),
+                            width="stretch",
+                        ):
+                            remover = idx
+
+                if remover is not None:
+                    st.session_state.itens_compra.pop(remover)
+                    st.rerun()
+
+                total = sum(item["subtotal"] for item in st.session_state.itens_compra)
+                total_line("Total", brl(total))
+
+                c_ok, c_limpar = st.columns(2)
+                with c_ok:
+                    finalizar = st.button(
+                        "Registrar compra",
+                        width="stretch",
+                        type="primary",
+                        icon=material("check"),
+                    )
+                with c_limpar:
+                    limpar = st.button(
+                        "Limpar", width="stretch", icon=material("trash")
+                    )
+
+                if limpar:
+                    st.session_state.itens_compra = []
+                    st.rerun()
+
+                if finalizar:
+                    if not fornecedor.strip():
+                        notice("Informe o fornecedor antes de registrar.", "warning")
+                    else:
+                        try:
+                            compra = CompraService.criar_compra(
+                                db=db,
+                                data_compra=data_compra,
+                                fornecedor=fornecedor.strip(),
+                                metodo_pagamento=metodo,
+                                itens=st.session_state.itens_compra,
+                                observacoes=observacoes or None,
+                            )
+                            st.session_state.itens_compra = []
+                            st.toast(
+                                f"Compra {compra.id} registrada e estoque atualizado.",
+                                icon=material("check"),
+                            )
+                            st.rerun()
+                        except Exception as erro:
+                            notice(f"Não foi possível registrar a compra: {erro}", "error")
+
+    # ----------------------------------------------------------------- histórico
+    else:
+        section("filter", "Período")
+        c1, c2 = st.columns(2)
+        with c1:
             data_inicio = st.date_input(
-                "Data Início",
+                "Início",
                 value=date.today().replace(day=1),
-                key="data_inicio_compras"
+                key="compras_ini",
+                format="DD/MM/YYYY",
             )
-        
-        with col2:
+        with c2:
             data_fim = st.date_input(
-                "Data Fim",
-                value=date.today(),
-                key="data_fim_compras"
+                "Fim", value=date.today(), key="compras_fim", format="DD/MM/YYYY"
             )
-        
-        with col3:
-            st.markdown("<br>", unsafe_allow_html=True)
-            buscar = st.button("🔍 Buscar", use_container_width=True)
-        
-        if buscar or True:
-            compras = CompraService.listar_compras(db, data_inicio, data_fim)
-            
-            if compras:
-                st.markdown(f"**{len(compras)} compra(s) encontrada(s)**")
-                
-                # Estatísticas
-                total_periodo = sum(float(c.valor_total) for c in compras)
-                
-                col1, col2, col3 = st.columns(3)
-                
-                with col1:
-                    st.metric("Total Compras", len(compras))
-                
-                with col2:
-                    st.metric("Valor Total", f"R$ {total_periodo:,.2f}")
-                
-                with col3:
-                    ticket_medio = total_periodo / len(compras) if compras else 0
-                    st.metric("Ticket Médio", f"R$ {ticket_medio:.2f}")
-                
-                st.divider()
-                
-                # Tabela de compras
-                for compra in compras:
-                    with st.expander(f"🛒 Compra #{compra.id} - {compra.data.strftime('%d/%m/%Y')} - R$ {float(compra.valor_total):.2f}"):
-                        col1, col2 = st.columns(2)
-                        
-                        with col1:
-                            st.markdown(f"""
-                            **Fornecedor:** {compra.fornecedor}  
-                            **Data:** {compra.data.strftime('%d/%m/%Y')}  
-                            **Método:** {compra.metodo_pagamento}  
-                            **Total:** R$ {float(compra.valor_total):.2f}
-                            """)
-                            
-                            if compra.observacoes:
-                                st.markdown(f"**Obs:** {compra.observacoes}")
-                        
-                        with col2:
-                            st.markdown("**Itens:**")
-                            for item in compra.itens:
-                                st.markdown(f"""
-                                - {item.produto.nome}: {item.quantidade}x R$ {float(item.preco_unitario):.2f} = R$ {float(item.subtotal):.2f}
-                                """)
-                
-                # Exportar
-                dados_compras = []
-                for c in compras:
-                    dados_compras.append({
-                        'ID': c.id,
-                        'Data': c.data.strftime('%d/%m/%Y'),
-                        'Fornecedor': c.fornecedor,
-                        'Valor': f"R$ {float(c.valor_total):.2f}",
-                        'Pagamento': c.metodo_pagamento,
-                        'Itens': len(c.itens)
-                    })
-                
-                df_compras = pd.DataFrame(dados_compras)
-                csv = df_compras.to_csv(index=False).encode('utf-8')
-                
-                st.download_button(
-                    label="📥 Exportar Relatório",
-                    data=csv,
-                    file_name=f"compras_{data_inicio}_{data_fim}.csv",
-                    mime="text/csv"
+
+        compras = CompraService.listar_compras(db, data_inicio, data_fim)
+
+        if not compras:
+            empty_state(
+                "truck",
+                "Nenhuma compra no período",
+                "Ajuste as datas ou registre uma nova entrada de mercadoria.",
+            )
+        else:
+            total = sum(float(c.valor_total) for c in compras)
+            fornecedores = {c.fornecedor for c in compras}
+
+            kpi_row(
+                [
+                    kpi_card("Compras", num(len(compras)), "truck", tone="brand"),
+                    kpi_card("Total gasto", brl(total), "money", tone="neg"),
+                    kpi_card("Média por compra", brl(total / len(compras)), "target"),
+                    kpi_card("Fornecedores", num(len(fornecedores)), "storefront"),
+                ]
+            )
+
+            section("list", "Lançamentos")
+            df = pd.DataFrame(
+                [
+                    {
+                        "Nº": c.id,
+                        "Data": data_br(c.data),
+                        "Fornecedor": c.fornecedor,
+                        "Valor": brl(c.valor_total),
+                        "Pagamento": c.metodo_pagamento,
+                        "Itens": len(c.itens),
+                    }
+                    for c in compras
+                ]
+            )
+            data_table(df, height=340)
+
+            c_export, _ = st.columns([1, 3])
+            with c_export:
+                download_csv(df, f"compras_{data_inicio}_{data_fim}.csv", "Exportar período")
+
+            section("search", "Detalhe")
+            for compra in compras:
+                titulo = (
+                    f"Compra {compra.id} · {data_br(compra.data)} · "
+                    f"{compra.fornecedor} · {brl(compra.valor_total)}"
                 )
-            else:
-                st.info("📊 Nenhuma compra encontrada no período selecionado.")
+                with st.expander(titulo, icon=material("truck")):
+                    c1, c2 = st.columns([1, 1.4], gap="large")
+                    with c1:
+                        definition_list(
+                            [
+                                ("Fornecedor", compra.fornecedor),
+                                ("Data", data_br(compra.data)),
+                                ("Pagamento", compra.metodo_pagamento),
+                                ("Itens", plural(len(compra.itens), "item", "itens")),
+                                ("Total", brl(compra.valor_total)),
+                            ]
+                        )
+                        if compra.observacoes:
+                            st.caption(compra.observacoes)
+                    with c2:
+                        data_table(
+                            pd.DataFrame(
+                                [
+                                    {
+                                        "Produto": item.produto.nome,
+                                        "Qtd.": item.quantidade,
+                                        "Unitário": brl(item.preco_unitario),
+                                        "Subtotal": brl(item.subtotal),
+                                    }
+                                    for item in compra.itens
+                                ]
+                            )
+                        )
 
 finally:
     db.close()
