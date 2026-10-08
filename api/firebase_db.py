@@ -70,7 +70,19 @@ def next_id_in_transaction(db: Client, transaction, collection: str) -> tuple[in
         raise ValueError("Coleção não permitida")
     counter = db.collection("_counters").document(collection)
     snapshot = counter.get(transaction=transaction)
-    return int((snapshot.to_dict() or {}).get("next", 1)), counter
+    stored = (snapshot.to_dict() or {}).get("next")
+    if isinstance(stored, int) and stored > 0:
+        return stored, counter
+
+    # Dados legados importados manualmente podem conter produtos sem contador.
+    # Nunca reutilize o ID 1 quando a coleção já contém registros.
+    from google.cloud.firestore_v1 import Query
+    existing = list(
+        db.collection(collection).order_by("id", direction=Query.DESCENDING)
+        .limit(1).stream(transaction=transaction)
+    )
+    greatest = max((int(row.to_dict().get("id", 0)) for row in existing), default=0)
+    return greatest + 1, counter
 
 
 def record(snapshot) -> dict | None:

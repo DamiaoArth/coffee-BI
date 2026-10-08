@@ -331,7 +331,7 @@ def add_product(data: ProductInput, db: DB, user: Manager):
     def create(transaction):
         next_id, counter = next_id_in_transaction(db, transaction, "products")
         obj = {"id": next_id, **product_payload(data)}
-        transaction.set(ref(db, "products", next_id), obj)
+        transaction.create(ref(db, "products", next_id), obj)
         transaction.set(counter, {"next": next_id + 1})
         return obj
     return product_json(create(tx))
@@ -422,7 +422,7 @@ def add_sale(data: SaleInput, db: DB, user: User):
             transaction.update(docs[pid], {
                 "estoque_atual": product["estoque_atual"] - grouped[pid]
             })
-        transaction.set(ref(db, "sales", sale_id), sale)
+        transaction.create(ref(db, "sales", sale_id), sale)
         transaction.set(counter, {"next": sale_id + 1})
         return {"id": sale_id, "valor_total": reais(total)}
     return create(tx)
@@ -481,7 +481,7 @@ def add_purchase(data: PurchaseInput, db: DB, user: Manager):
             "observacoes": data.observacoes, "valor_total_centavos": total,
             "itens": lines,
         }
-        transaction.set(ref(db, "purchases", purchase_id), purchase)
+        transaction.create(ref(db, "purchases", purchase_id), purchase)
         transaction.set(counter, {"next": purchase_id + 1})
         return {"id": purchase_id, "valor_total": reais(total)}
     return create(tx)
@@ -513,6 +513,23 @@ def add_transaction(data: TransactionInput, db: DB, user: Manager):
     return create(tx)
 
 
+@app.put("/api/transactions/{tid}")
+def edit_transaction(tid: int, data: TransactionInput, db: DB, user: Manager):
+    document = ref(db, "transactions", tid)
+    snap = document.get()
+    if not snap.exists:
+        raise HTTPException(404, "Lançamento não encontrado.")
+    payload = {
+        "tipo": data.tipo, "descricao": data.descricao.strip(),
+        "categoria": data.categoria.strip(), "valor_centavos": cents(data.valor),
+        "data": data.data.isoformat(),
+    }
+    document.update(payload)
+    return {"id": tid, "tipo": data.tipo, "descricao": data.descricao.strip(),
+            "categoria": data.categoria, "valor": reais(payload["valor_centavos"]),
+            "data": payload["data"]}
+
+
 @app.delete("/api/transactions/{tid}")
 def delete_transaction(tid: int, db: DB, user: Manager):
     document = ref(db, "transactions", tid)
@@ -535,7 +552,7 @@ def add_employee(data: EmployeeInput, db: DB, user: Admin):
     def create(transaction):
         ident, counter = next_id_in_transaction(db, transaction, "employees")
         obj = {"id": ident, **data.model_dump(), "data_admissao": business_today().isoformat()}
-        transaction.set(ref(db, "employees", ident), obj)
+        transaction.create(ref(db, "employees", ident), obj)
         transaction.set(counter, {"next": ident + 1})
         return obj
     return employee_json(create(tx))
@@ -550,6 +567,22 @@ def edit_employee(eid: int, data: EmployeeInput, db: DB, user: Admin):
     obj = {**old.to_dict(), **data.model_dump(), "id": eid}
     doc.update(data.model_dump())
     return employee_json(obj)
+
+
+@app.delete("/api/employees/{eid}")
+def deactivate_employee(eid: int, db: DB, user: Admin):
+    doc = ref(db, "employees", eid)
+    snap = doc.get()
+    if not snap.exists:
+        raise HTTPException(404, "Funcionário não encontrado.")
+    # Prevent an active account from being stranded on an inactive employee.
+    linked = list(db.collection("users").where(
+        filter=FieldFilter("funcionario_id", "==", eid)
+    ).limit(2).stream())
+    if any(s.to_dict().get("ativo", False) for s in linked):
+        raise HTTPException(409, "Este funcionário possui acesso ativo. Desative o acesso primeiro.")
+    doc.update({"ativo": False})
+    return {"ok": True, "ativo": False}
 
 
 @app.get("/api/users")
@@ -585,7 +618,7 @@ def register_user(db: Client, *, username: str, password_hash: str,
             "id": next_id, "nome_usuario": username, "senha_hash": password_hash,
             "nivel_acesso": role, "funcionario_id": employee_id, "ativo": True,
         }
-        transaction.set(ref(db, "users", next_id), obj)
+        transaction.create(ref(db, "users", next_id), obj)
         transaction.set(index_doc, {"user_id": next_id, "nome_usuario": username})
         transaction.set(counter, {"next": next_id + 1})
         return obj
