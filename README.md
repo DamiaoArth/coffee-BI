@@ -65,13 +65,22 @@ Consulte [docs/SPA.md](docs/SPA.md) para configuração Firebase, migração SQL
 O seed cria produtos, equipe, compras, vendas e lançamentos financeiros coerentes para visualizar o dashboard.
 Ele **não cria usuários ou senhas** e marca todos os documentos gerados com \`seed_tag=coffee-bi-demo-v1\`.
 
-Cloud Firestore real:
+Cloud Firestore real (recomendado):
 
-    python -m api.seed_firestore --apply --confirm-project-id business-inteli
+    BI seed
+
+O comando lê o .env, mostra o projeto configurado e pede que você digite exatamente
+o ID do projeto antes de gravar. Para automação sem prompt:
+
+    BI seed --yes
 
 Para substituir somente dados gerados anteriormente pelo seed:
 
-    python -m api.seed_firestore --reset-demo-data --apply --confirm-project-id business-inteli
+    BI seed --reset-demo-data
+
+O comando Python direto também continua disponível:
+
+    python -m api.seed_firestore --apply --confirm-project-id business-inteli
 
 No Firebase Emulator, basta manter \`FIRESTORE_EMULATOR_HOST\` configurado e executar:
 
