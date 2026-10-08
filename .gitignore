@@ -13,3 +13,9 @@ __pycache__/
 data/*.db
 data/*.db-*
 *.sqlite3
+
+# Credenciais privadas Firebase - nunca versionar
+*service-account*.json
+*serviceAccount*.json
+firebase-adminsdk-*.json
+firebase-credentials*.json
