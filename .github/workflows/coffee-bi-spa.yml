@@ -5,6 +5,8 @@ on:
       - 'api/**'
       - 'web/**'
       - 'tests/test_api_spa.py'
+      - 'tests/test_cli.py'
+      - 'pyproject.toml'
       - 'firebase.json'
       - 'firestore.rules'
       - 'firestore.indexes.json'
@@ -35,7 +37,13 @@ jobs:
           distribution: temurin
           java-version: '21'
       - name: Instalar dependências da API e testes
-        run: python -m pip install -r requirements-dev.txt
+        run: python -m pip install -e '.[dev]'
+      - name: Verificar comando BI init
+        run: |
+          BI --help
+          BI init --help
+      - name: Testar CLI sem Firebase real
+        run: python -m pytest -q tests/test_cli.py
       - name: Verificar sintaxe JavaScript
         run: node --check web/app.js
       - name: Verificar módulos Python
