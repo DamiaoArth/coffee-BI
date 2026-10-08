@@ -98,6 +98,11 @@ def test_atomic_sale_updates_stock_without_overselling(client):
     assert rejected.status_code == 409
     assert http.get("/api/products").json()[0]["estoque_atual"] == 7
     assert len(http.get("/api/sales").json()) == 1
+    dashboard = http.get("/api/dashboard?days=7").json()
+    assert len(dashboard["serie"]) == 7
+    assert len(dashboard["serie_anterior"]) == 7
+    assert {"data", "total", "vendas", "ticket_medio"} <= set(dashboard["serie"][0])
+    assert sum(day["vendas"] for day in dashboard["serie"]) == 1
 
 
 def test_purchase_weighted_average_and_reports(client):
