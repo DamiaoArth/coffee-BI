@@ -106,3 +106,23 @@ def test_init_starts_backend_with_emulator_and_cleans_up(isolated, monkeypatch):
 def test_invalid_port():
     assert cli.main(["init", "--port", "0"]) == 2
     assert cli.main(["init", "--port", "65536"]) == 2
+
+
+def test_seed_command_uses_configured_project(monkeypatch, tmp_path):
+    from api import seed_firestore
+
+    monkeypatch.setattr(cli, "PROJECT_ROOT", tmp_path)
+    monkeypatch.setattr(cli, "ensure_config", lambda *, emulator: True)
+    monkeypatch.setenv("FIREBASE_PROJECT_ID", "business-inteli")
+    monkeypatch.delenv("FIRESTORE_EMULATOR_HOST", raising=False)
+    called = {}
+
+    def fake_seed(argv):
+        called["argv"] = argv
+        return 0
+
+    monkeypatch.setattr(seed_firestore, "main", fake_seed)
+    assert cli.main(["seed", "--yes", "--days", "14"]) == 0
+    assert called["argv"] == [
+        "--days", "14", "--apply", "--confirm-project-id", "business-inteli"
+    ]
