@@ -29,7 +29,7 @@ from api.firebase_db import (
     all_records, cents, get_firestore, next_id_in_transaction, reais, ref,
     user_lookup_ref,
 )
-from services.auth_service import AuthService
+from api.passwords import PasswordService
 
 load_dotenv()
 ROOT = Path(__file__).resolve().parent.parent
@@ -278,7 +278,7 @@ def login(body: Login, request: Request, response: Response, db: DB):
         if snap.exists:
             user = {"id": int(snap.id), **snap.to_dict()}
     # Equal error whether name exists or password is invalid.
-    if not user or not user.get("ativo") or not AuthService.verify_password(
+    if not user or not user.get("ativo") or not PasswordService.verify_password(
         body.password, user["senha_hash"]
     ):
         q.append(now)
@@ -595,7 +595,7 @@ def register_user(db: Client, *, username: str, password_hash: str,
 @app.post("/api/users", status_code=201)
 def add_user(data: NewUser, db: DB, user: Admin):
     obj = register_user(
-        db, username=data.nome_usuario, password_hash=AuthService.hash_password(data.senha),
+        db, username=data.nome_usuario, password_hash=PasswordService.hash_password(data.senha),
         role=data.nivel_acesso, employee_id=data.funcionario_id,
     )
     return public_user(obj)
