@@ -244,7 +244,7 @@ function financeView(rows) {
   const out=rows.filter(x=>x.tipo==='saída').reduce((n,x)=>n+Number(x.valor),0);
   const items=rows.map(t=>'<tr><td>'+shortDate(t.data)+'</td><td><strong>'+esc(t.descricao)+'</strong></td>'+
   '<td>'+esc(t.categoria)+'</td><td>'+tag(t.tipo,t.tipo==='saída'?'bad':'')+'</td>'+
-  '<td><strong>'+money(t.valor)+'</strong></td><td><button class="quiet-btn" data-action="delete-transaction" data-id="'+t.id+'">Excluir</button></td></tr>');
+  '<td><strong>'+money(t.valor)+'</strong></td><td><button class="btn btn-danger btn-sm" data-action="delete-transaction" data-id="'+t.id+'">'+icon('trash',15)+'<span>Excluir</span></button></td></tr>');
   return pageHead('CONTROLE FINANCEIRO','Financeiro','Lançamentos avulsos de entrada e saída de caixa.',
    '<button class="btn btn-primary" data-action="new-transaction">'+icon('plus',16)+'<span>Novo lançamento</span></button>')+
    '<div class="stats-grid">'+stat('Entradas',money(inc),'arrowUp','Lançamentos avulsos','green')+
@@ -257,7 +257,7 @@ function teamView(rows) {
   const items=rows.map(f=>'<tr><td><strong>'+esc(f.nome)+'</strong></td><td>'+esc(f.cargo)+'</td>'+
     '<td>'+esc(f.email||'—')+'</td><td>'+esc(f.telefone||'—')+'</td>'+
     '<td>'+tag(f.ativo?'Ativo':'Inativo',f.ativo?'':'warn')+'</td>'+
-    '<td><button class="quiet-btn" data-action="edit-employee" data-id="'+f.id+'">Editar</button></td></tr>');
+    '<td><button class="btn btn-secondary btn-sm" data-action="edit-employee" data-id="'+f.id+'">'+icon('edit',15)+'<span>Editar</span></button></td></tr>');
   return pageHead('PESSOAS','Equipe','Cadastre funcionários e gerencie permissões de acesso.',
     '<button class="btn btn-secondary" data-action="new-user">'+icon('user',16)+'<span>Criar acesso</span></button><button class="btn btn-primary" data-action="new-employee">'+icon('plus',16)+'<span>Novo funcionário</span></button>')+
     panel('Colaboradores',rows.length+' registros',items.length?
