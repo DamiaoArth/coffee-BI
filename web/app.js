@@ -66,7 +66,8 @@ function cached(key, loader, ttl=45000) {
   return running;
 }
 function dataFor(key) {
-  const path=key==='dashboard'||key==='bi'?'/'+key+'?days='+state.days : '/'+key;
+  const endpoint={finance:'transactions',team:'employees'}[key] || key;
+  const path=key==='dashboard'||key==='bi'?'/'+key+'?days='+state.days : '/'+endpoint;
   return cached(key+(key==='dashboard'||key==='bi'?':'+state.days:''),()=>request(path));
 }
 function invalidate(...keys) {
@@ -267,9 +268,9 @@ function loginView() {
   '</div></div><button type="submit" class="primary" '+(state.loginBusy?'disabled':'')+'>'+(state.loginBusy?'Entrando...':'Acessar plataforma →')+'</button></form>'+
   '<p class="login-note">Acesso restrito aos membros autorizados. Sua sessão é protegida.</p></div></section></div>';
 }
-function field(name,label,value='',type='text',attrs='') {
+function field(name,label,value='',type='text',attrs='',optional=false) {
   return '<div class="field"><label for="fld-'+name+'">'+esc(label)+'</label>'+
-   '<input id="fld-'+name+'" name="'+name+'" type="'+type+'" value="'+esc(value)+'" '+attrs+' required></div>';
+   '<input id="fld-'+name+'" name="'+name+'" type="'+type+'" value="'+esc(value)+'" '+attrs+'+(optional?'':' required')+'></div>';
 }
 function selectField(name,label,options,selected='') {
   return '<div class="field"><label for="fld-'+name+'">'+esc(label)+'</label>'+
@@ -342,8 +343,8 @@ function employeeForm(existing) {
     '<input type="hidden" name="id" value="'+esc(p.id||'')+'">'+
     field('nome','Nome completo',p.nome||'')+
     selectField('cargo','Cargo',['funcionario','Gerente','admin'],p.cargo||'funcionario')+
-    '<div class="modal-grid">'+field('email','E-mail',p.email||'','email','')+
-    field('telefone','Telefone',p.telefone||'')+'</div>'+
+    '<div class="modal-grid">'+field('email','E-mail',p.email||'','email','',true)+
+    field('telefone','Telefone',p.telefone||'','text','',true)+'</div>'+
     selectField('ativo','Status',['true','false'],String(p.ativo??true)),
     'Salvar funcionário','employee');
 }
