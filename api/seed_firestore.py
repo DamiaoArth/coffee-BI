@@ -15,13 +15,16 @@ from __future__ import annotations
 import argparse
 import os
 import random
+from pathlib import Path
 from datetime import date, timedelta
 from typing import Any
 
 from firebase_admin import firestore
+from dotenv import load_dotenv
 
 from api.firebase_db import get_firestore, next_id_in_transaction
 
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
 SEED_TAG = "coffee-bi-demo-v1"
 BUSINESS_COLLECTIONS = (
     "employees", "products", "sales", "purchases", "transactions"
@@ -276,7 +279,25 @@ def _validate_target(args) -> str:
     return project
 
 
+def _seed_counts(db) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for collection in BUSINESS_COLLECTIONS:
+        counts[collection] = sum(
+            1 for _ in db.collection(collection).where("seed_tag", "==", SEED_TAG).stream()
+        )
+    return counts
+
+
 def main(argv: list[str] | None = None) -> int:
+    # Direct execution must behave exactly like BI init: use the repository .env.
+    env_path = PROJECT_ROOT / ".env"
+    if env_path.exists():
+        load_dotenv(env_path, override=False)
+        print(f"Configuração carregada: {env_path}")
+    else:
+        load_dotenv(override=False)
+        print("Aviso: .env não encontrado na raiz do projeto.")
+
     parser = argparse.ArgumentParser(description="Popular Coffee BI com dados de demonstração")
     parser.add_argument("--days", type=int, default=30, help="Dias de histórico (7 a 90)")
     parser.add_argument("--apply", action="store_true", help="Autorizar gravação no Firestore real")
@@ -295,11 +316,20 @@ def main(argv: list[str] | None = None) -> int:
         print(exc)
         return 2
 
+    emulator = os.getenv("FIRESTORE_EMULATOR_HOST")
+    target = f"emulador {emulator}" if emulator else "Cloud Firestore"
+    print(f"Destino confirmado: projeto={project} | {target}")
     db = get_firestore()
+
     if args.reset_demo_data:
         print("Removendo somente dados de demonstração anteriores:", _delete_demo_records(db))
+
     summary = _write_dataset(db, dataset)
+    verified = _seed_counts(db)
     print(f"Seed concluído no projeto {project}: {summary}")
+    print(f"Verificação pós-gravação ({SEED_TAG}): {verified}")
+    if any(verified[name] < summary[name] for name in BUSINESS_COLLECTIONS):
+        raise RuntimeError("A verificação pós-gravação encontrou menos documentos do que o esperado.")
     print("Nenhum usuário ou senha foi criado. Use BI init para administrar acessos.")
     return 0
 
