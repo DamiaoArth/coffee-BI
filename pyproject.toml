@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "coffee-bi"
+version = "2.1.0"
+description = "Coffee BI: ERP para cafeterias, FastAPI e Firebase Cloud Firestore"
+requires-python = ">=3.11"
+dependencies = [
+  "fastapi>=0.115,<1",
+  "uvicorn[standard]>=0.30,<1",
+  "pydantic>=2.6,<3",
+  "firebase-admin>=6.6,<8",
+  "google-cloud-firestore>=2.20,<3",
+  "python-dotenv>=1,<2",
+  "bcrypt>=4.1,<5",
+  "itsdangerous>=2.2,<3",
+  "tzdata>=2025.2",
+]
+
+[project.optional-dependencies]
+legacy = ["sqlalchemy>=2.0.25,<3", "psycopg2-binary>=2.9.9,<3"]
+dev = ["pytest>=8,<10", "httpx>=0.27,<1"]
+
+[project.scripts]
+BI = "api.cli:main"
+
+[tool.setuptools]
+packages = ["api"]
