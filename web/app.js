@@ -8,7 +8,9 @@ const root = document.querySelector('#root');
 const toastNode = document.querySelector('#toast');
 const state = { user:null, csrf:'', path:location.pathname, cache:new Map(),
   inflight:new Map(), modal:null, cart:[], cartMode:'sale', error:null,
-  search:'', days:30, loginBusy:false, showPassword:false };
+  search:'', days:30, loginBusy:false, showPassword:false,
+  chartMetric:'revenue', chartCompare:false, chartPoint:null,
+  paymentSelection:null, productSelection:null };
 const ICONS = {
   dashboard:'<rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/>',
   intelligence:'<path d="M4 19V9"/><path d="M10 19V5"/><path d="M16 19v-7"/><path d="M22 19H2"/>',
@@ -64,6 +66,33 @@ function toast(message) {
   toastNode.classList.add('visible');
   clearTimeout(toastNode._timer);
   toastNode._timer = setTimeout(()=>toastNode.classList.remove('visible'),3400);
+}
+function moveVizTooltip(mark,event) {
+  const stage=mark.closest('.viz-stage');
+  const tip=stage?.querySelector('.viz-tooltip');
+  if(!stage||!tip)return;
+  tip.replaceChildren();
+  const title=document.createElement('strong');
+  title.textContent=mark.dataset.vizLabel||'';
+  const value=document.createElement('span');
+  value.textContent=mark.dataset.vizValue||'';
+  tip.append(title,value);
+  if(mark.dataset.vizSub){
+    const sub=document.createElement('small');
+    sub.textContent=mark.dataset.vizSub;
+    tip.append(sub);
+  }
+  const rect=stage.getBoundingClientRect();
+  const pointerX=event.clientX||rect.left+rect.width/2;
+  const pointerY=event.clientY||rect.top+rect.height/2;
+  const x=Math.min(Math.max(12,pointerX-rect.left+12),Math.max(12,rect.width-178));
+  const y=Math.min(Math.max(10,pointerY-rect.top-58),Math.max(10,rect.height-82));
+  tip.style.left=x+'px';
+  tip.style.top=y+'px';
+  tip.classList.add('visible');
+}
+function hideVizTooltip(mark) {
+  mark.closest('.viz-stage')?.querySelector('.viz-tooltip')?.classList.remove('visible');
 }
 async function request(path, options={}) {
   const method = options.method || 'GET';
@@ -121,9 +150,10 @@ function pageHead(kicker,title,subtitle,actions='') {
     '<div class="head-actions">'+actions+'</div></div>';
 }
 function periodSelect() {
-  return '<select class="select" id="days" aria-label="Período de análise">'+
-    [[7,'Últimos 7 dias'],[30,'Últimos 30 dias'],[90,'Últimos 90 dias'],[365,'Últimos 12 meses']]
-    .map(([days,label])=>'<option value="'+days+'" '+(state.days===days?'selected':'')+'>'+label+'</option>').join('')+'</select>';
+  return '<div class="period-switch" role="group" aria-label="Período de análise">'+
+    [[7,'7D'],[30,'30D'],[90,'90D'],[365,'1A']].map(([days,label])=>
+      '<button type="button" class="period-btn '+(state.days===days?'active':'')+'" data-action="set-days" data-days="'+days+'" aria-pressed="'+(state.days===days)+'">'+label+'</button>'
+    ).join('')+'</div>';
 }
 function stat(label,value,iconName,foot,tone='green') {
   return '<article class="stat-card"><header><span class="stat-label">'+esc(label)+'</span><span class="stat-ico tone-'+tone+'">'+icon(iconName,19)+'</span></header>'+
@@ -149,36 +179,133 @@ function skeleton(type) {
    Array(5).fill('<div style="display:flex;align-items:center;gap:16px;margin-bottom:15px"><div class="skeleton circle-skeleton"></div><div class="skeleton" style="height:18px;flex:1"></div><div class="skeleton pill-skeleton"></div></div>').join('')+'</div>';
   return records;
 }
-function lineChart(series) {
-  if (!series?.length) return empty('Sem vendas no período','Registre uma venda para começar a visualizar seu faturamento.');
-  const w=760,h=280,left=58,right=18,top=18,bottom=34;
-  const vals=series.map(s=>Number(s.total)), rawMax=Math.max(...vals,1), max=Math.ceil(rawMax/100)*100 || 100;
-  const x=i=>left+(i/Math.max(1,series.length-1))*(w-left-right);
-  const y=v=>top+(1-v/max)*(h-top-bottom);
-  const pts=vals.map((v,i)=>x(i).toFixed(1)+','+y(v).toFixed(1)).join(' ');
-  const area=left+','+(h-bottom)+' '+pts+' '+x(vals.length-1)+','+(h-bottom);
-  const guides=[0,.25,.5,.75,1].map(r=>{
-    const gy=y(max*r),value=max*r;
-    return '<g><line x1="'+left+'" x2="'+(w-right)+'" y1="'+gy+'" y2="'+gy+'" class="chart-grid"/><text x="'+(left-10)+'" y="'+(gy+4)+'" text-anchor="end" class="chart-label">'+esc(money(value).replace(',00',''))+'</text></g>';
+const CHART_METRICS = {
+  revenue:{key:'total',label:'Receita',format:money,axis:value=>money(value).replace(',00','')},
+  sales:{key:'vendas',label:'Vendas',format:value=>number(Math.round(value)),axis:value=>number(Math.round(value))},
+  ticket:{key:'ticket_medio',label:'Ticket médio',format:money,axis:value=>money(value).replace(',00','')},
+};
+
+function lineChart(series, previous=[]) {
+  if (!series?.length) return empty('Sem dados no período','Registre vendas para começar a visualizar a evolução da operação.');
+  const metric=CHART_METRICS[state.chartMetric]||CHART_METRICS.revenue;
+  const w=780,h=286,left=62,right=20,top=24,bottom=38;
+  const values=series.map(item=>Number(item[metric.key])||0);
+  const previousValues=previous.map(item=>Number(item[metric.key])||0);
+  const comparisonValues=state.chartCompare?previousValues:[];
+  const rawMax=Math.max(...values,...comparisonValues,1);
+  const step=metric.key==='vendas'?Math.max(1,Math.ceil(rawMax/4)):Math.max(1,Math.ceil(rawMax/4/10)*10);
+  const max=Math.max(step*4,rawMax);
+  const x=index=>left+(index/Math.max(1,series.length-1))*(w-left-right);
+  const y=value=>top+(1-value/max)*(h-top-bottom);
+  const points=values.map((value,index)=>x(index).toFixed(1)+','+y(value).toFixed(1)).join(' ');
+  const area=left+','+(h-bottom)+' '+points+' '+x(values.length-1)+','+(h-bottom);
+  const comparePoints=previousValues.length===series.length
+    ? previousValues.map((value,index)=>x(index).toFixed(1)+','+y(value).toFixed(1)).join(' ')
+    : '';
+  const guides=[0,.25,.5,.75,1].map(ratio=>{
+    const gy=y(max*ratio);
+    return '<g><line x1="'+left+'" x2="'+(w-right)+'" y1="'+gy+'" y2="'+gy+'" class="chart-grid"/>'+
+      '<text x="'+(left-11)+'" y="'+(gy+4)+'" text-anchor="end" class="chart-label">'+esc(metric.axis(max*ratio))+'</text></g>';
   }).join('');
-  const dots=vals.map((v,i)=>'<circle cx="'+x(i)+'" cy="'+y(v)+'" r="4" class="chart-dot"><title>'+esc(shortDate(series[i].data))+': '+esc(money(v))+'</title></circle>').join('');
-  return '<div class="chart"><svg viewBox="0 0 '+w+' '+h+'" role="img" aria-label="Evolução do faturamento no período">'+
-    '<defs><linearGradient id="fillChart" x1="0" y1="0" x2="0" y2="1"><stop class="chart-stop-a" stop-opacity=".26"/><stop offset="1" class="chart-stop-b" stop-opacity="0"/></linearGradient></defs>'+
-    guides+'<polygon points="'+area+'" fill="url(#fillChart)"/><polyline points="'+pts+'" class="chart-line" fill="none"/>'+dots+
-    '<text x="'+left+'" y="'+(h-7)+'" class="chart-date">'+esc(shortDate(series[0].data))+'</text>'+
-    '<text x="'+(w-right)+'" y="'+(h-7)+'" text-anchor="end" class="chart-date">'+esc(shortDate(series[series.length-1].data))+'</text>'+
-    '</svg></div>';
+  const selected=series.find(item=>item.data===state.chartPoint)
+    || [...series].reverse().find(item=>Number(item.vendas)>0)
+    || series[series.length-1];
+  const marks=series.map((item,index)=>{
+    const value=values[index];
+    const active=item.data===selected?.data;
+    return '<g class="chart-mark '+(active?'selected':'')+'" tabindex="0" role="button" aria-label="'+
+      esc(shortDate(item.data)+', '+metric.label+': '+metric.format(value))+
+      '" data-action="chart-point" data-date="'+esc(item.data)+'" data-viz-label="'+esc(shortDate(item.data))+
+      '" data-viz-value="'+esc(metric.label+': '+metric.format(value))+'" data-viz-sub="'+
+      esc(number(item.vendas)+' venda'+(item.vendas===1?'':'s')+' · ticket '+money(item.ticket_medio))+'">'+
+      '<circle cx="'+x(index)+'" cy="'+y(value)+'" r="14" class="chart-hit"/>'+
+      '<circle cx="'+x(index)+'" cy="'+y(value)+'" r="'+(active?'5.5':'4')+'" class="chart-dot"/></g>';
+  }).join('');
+  const metricButtons=Object.entries(CHART_METRICS).map(([key,definition])=>
+    '<button type="button" class="chart-control '+(state.chartMetric===key?'active':'')+
+    '" data-action="chart-metric" data-metric="'+key+'" aria-pressed="'+(state.chartMetric===key)+'">'+esc(definition.label)+'</button>'
+  ).join('');
+  const summary=selected?'<div class="chart-selection"><div><span>Dia selecionado</span><strong>'+esc(shortDate(selected.data))+'</strong></div>'+
+    '<div><span>Receita</span><strong>'+money(selected.total)+'</strong></div>'+
+    '<div><span>Vendas</span><strong>'+number(selected.vendas)+'</strong></div>'+
+    '<div><span>Ticket médio</span><strong>'+money(selected.ticket_medio)+'</strong></div></div>':'';
+  return '<div class="chart-widget"><div class="chart-toolbar"><div class="chart-segmented">'+metricButtons+'</div>'+
+    '<button type="button" class="compare-btn '+(state.chartCompare?'active':'')+'" data-action="chart-compare" aria-pressed="'+state.chartCompare+'">'+
+      icon('trend',15)+'<span>Comparar período anterior</span></button></div>'+
+    '<div class="chart viz-stage"><svg viewBox="0 0 '+w+' '+h+'" role="img" aria-label="Evolução de '+esc(metric.label.toLowerCase())+' no período">'+
+      '<defs><linearGradient id="fillChart" x1="0" y1="0" x2="0" y2="1"><stop class="chart-stop-a" stop-opacity=".25"/><stop offset="1" class="chart-stop-b" stop-opacity="0"/></linearGradient></defs>'+
+      guides+'<polygon points="'+area+'" class="chart-area"/>'+
+      (state.chartCompare&&comparePoints?'<polyline points="'+comparePoints+'" class="chart-line chart-line-compare" fill="none"/>':'')+
+      '<polyline points="'+points+'" class="chart-line" fill="none"/>'+marks+
+      '<text x="'+left+'" y="'+(h-8)+'" class="chart-date">'+esc(shortDate(series[0].data))+'</text>'+
+      '<text x="'+(w-right)+'" y="'+(h-8)+'" text-anchor="end" class="chart-date">'+esc(shortDate(series[series.length-1].data))+'</text>'+
+    '</svg><div class="viz-tooltip" role="status" aria-live="polite"></div></div>'+
+    (state.chartCompare?'<div class="chart-legend"><span><i class="legend-current"></i>Período atual</span><span><i class="legend-previous"></i>Período anterior</span></div>':'')+
+    summary+'</div>';
 }
-function bars(items,labelKey,valueKey,formatter=number) {
-  if (!items?.length) return empty('Nenhum registro para comparar');
-  const highest=Math.max(...items.map(item=>Number(item[valueKey])),1);
-  return '<div class="mini-list">'+items.map((item,index)=>'<div class="list-line">'+
-   '<span class="rank">'+(index+1)+'</span><div style="flex:1;min-width:0">'+
-   '<div style="display:flex;gap:9px;align-items:center"><span class="list-name">'+esc(item[labelKey])+'</span>'+
-   '<span class="list-value">'+esc(formatter(item[valueKey]))+'</span></div>'+
-   '<div class="bar-track"><div class="bar-fill" style="width:'+Math.max(2,Number(item[valueKey])/highest*100)+'%"></div></div>'+
-   '</div></div>').join('')+'</div>';
+
+function rankChart(items) {
+  if (!items?.length) return empty('Nenhum produto para comparar');
+  const highest=Math.max(...items.map(item=>Number(item.quantidade)),1);
+  const total=items.reduce((sum,item)=>sum+Number(item.quantidade||0),0);
+  const selectedIndex=Math.min(state.productSelection??0,items.length-1);
+  const selected=items[selectedIndex];
+  return '<div class="rank-chart viz-stage">'+items.map((item,index)=>{
+    const value=Number(item.quantidade)||0;
+    const share=total?value/total*100:0;
+    return '<button type="button" class="rank-bar-row '+(index===selectedIndex?'selected':'')+
+      '" data-action="rank-select" data-index="'+index+'" data-viz-label="'+esc(item.nome)+
+      '" data-viz-value="'+esc(number(value)+' unidades')+'" data-viz-sub="'+esc(share.toFixed(1).replace('.',',')+'% do Top 5')+'">'+
+      '<span class="rank">'+(index+1)+'</span><span class="rank-bar-content"><span class="rank-bar-label"><strong>'+esc(item.nome)+
+      '</strong><b>'+number(value)+'</b></span><span class="bar-track"><span class="bar-fill" style="width:'+Math.max(3,value/highest*100)+'%"></span></span></span></button>';
+  }).join('')+'<div class="rank-selection"><span>Selecionado</span><strong>'+esc(selected.nome)+'</strong><b>'+
+    number(selected.quantidade)+' unidades · '+(total?(selected.quantidade/total*100).toFixed(1).replace('.',','):'0')+'% do Top 5</b></div>'+
+    '<div class="viz-tooltip" role="status" aria-live="polite"></div></div>';
 }
+
+function polar(cx,cy,r,angle) {
+  const radians=(angle-90)*Math.PI/180;
+  return [cx+r*Math.cos(radians),cy+r*Math.sin(radians)];
+}
+function donutArc(cx,cy,outer,inner,start,end) {
+  const sweep=Math.max(.01,end-start);
+  const gap=Math.min(1.2,sweep/6);
+  start+=gap;end-=gap;
+  if(end<=start)end=start+.01;
+  const p1=polar(cx,cy,outer,start),p2=polar(cx,cy,outer,end);
+  const p3=polar(cx,cy,inner,end),p4=polar(cx,cy,inner,start);
+  const large=end-start>180?1:0;
+  return 'M '+p1[0]+' '+p1[1]+' A '+outer+' '+outer+' 0 '+large+' 1 '+p2[0]+' '+p2[1]+
+    ' L '+p3[0]+' '+p3[1]+' A '+inner+' '+inner+' 0 '+large+' 0 '+p4[0]+' '+p4[1]+' Z';
+}
+function donutChart(items) {
+  if (!items?.length) return empty('Sem formas de pagamento','As formas utilizadas nas vendas aparecerão aqui.');
+  const total=items.reduce((sum,item)=>sum+Number(item.total||0),0);
+  if(total<=0)return empty('Sem receita no período');
+  const selectedIndex=Math.min(state.paymentSelection??0,items.length-1);
+  const selected=items[selectedIndex];
+  let angle=0;
+  const paths=items.map((item,index)=>{
+    const sweep=Number(item.total)/total*360;
+    const path=donutArc(90,90,72,47,angle,angle+sweep);
+    angle+=sweep;
+    return '<path d="'+path+'" class="donut-slice slice-'+(index%6)+' '+(index===selectedIndex?'selected':'')+
+      '" tabindex="0" role="button" data-action="payment-select" data-index="'+index+
+      '" data-viz-label="'+esc(item.nome)+'" data-viz-value="'+esc(money(item.total))+
+      '" data-viz-sub="'+esc((Number(item.total)/total*100).toFixed(1).replace('.',',')+'% da receita')+'"/>';
+  }).join('');
+  const legend=items.map((item,index)=>{
+    const share=Number(item.total)/total*100;
+    return '<button type="button" class="donut-legend-row '+(index===selectedIndex?'selected':'')+
+      '" data-action="payment-select" data-index="'+index+'"><span class="donut-swatch slice-'+(index%6)+'"></span>'+
+      '<span><strong>'+esc(item.nome)+'</strong><small>'+share.toFixed(1).replace('.',',')+'%</small></span><b>'+money(item.total)+'</b></button>';
+  }).join('');
+  return '<div class="donut-layout"><div class="donut-stage viz-stage"><svg viewBox="0 0 180 180" role="img" aria-label="Distribuição das formas de pagamento">'+
+    paths+'<text x="90" y="83" text-anchor="middle" class="donut-caption">Selecionado</text>'+
+    '<text x="90" y="103" text-anchor="middle" class="donut-value">'+esc(money(selected.total).replace(',00',''))+'</text></svg>'+
+    '<div class="viz-tooltip" role="status" aria-live="polite"></div></div><div class="donut-legend">'+legend+'</div></div>';
+}
+
 function table(headers,items) {
   return '<div class="table-wrap"><table><thead><tr>'+headers.map(h=>'<th>'+esc(h)+'</th>').join('')+
     '</tr></thead><tbody>'+items.join('')+'</tbody></table></div>';
@@ -192,9 +319,9 @@ function dashboardView(d,bi=false) {
     stat('Total de vendas',number(d.vendas),'receipt','Vendas registradas','blue')+
     stat('Ticket médio',money(d.ticket_medio),'ticket','Valor médio por pedido','orange')+
     stat('Produtos ativos',number(d.produtos_ativos),'box','Itens no catálogo','purple')+'</div>';
-  const trends=panel('Evolução das vendas','Receita por dia',lineChart(d.serie));
-  const top=panel('Mais vendidos','Ranking de produtos',bars(d.top_produtos,'nome','quantidade'));
-  const methods=panel('Formas de pagamento','Distribuição de receitas',bars(d.pagamentos,'nome','total',money));
+  const trends=panel('Evolução da operação','Explore receita, volume e ticket por dia',lineChart(d.serie,d.serie_anterior));
+  const top=panel('Mais vendidos','Clique em um produto para detalhar',rankChart(d.top_produtos));
+  const methods=panel('Formas de pagamento','Selecione uma fatia ou legenda',donutChart(d.pagamentos));
   const low=panel('Alertas de estoque','Itens que precisam de reposição',d.estoque_baixo.length?
     '<div class="mini-list">'+d.estoque_baixo.map(p=>'<div class="list-line"><span class="rank rank-alert">'+icon('alert',15)+'</span>'+
     '<span class="list-name">'+esc(p.nome)+'</span>'+tag(p.estoque_atual+' '+p.unidade,'warn')+'</div>').join('')+'</div>':
@@ -428,6 +555,16 @@ document.addEventListener('click',async e=>{
     if(action==='toggle-password'){state.showPassword=!state.showPassword;const p=document.querySelector('#password');if(p){p.type=state.showPassword?'text':'password';btn.textContent=state.showPassword?'Ocultar':'Mostrar';p.focus();}return;}
     if(action==='logout'){await request('/auth/logout',{method:'POST'});state.user=null;state.csrf='';state.cache.clear();history.replaceState({},'','/');render();return;}
     if(action==='retry'){invalidate(pageKey());paintPage();return;}
+    if(action==='set-days'){
+      state.days=Number(btn.dataset.days)||30;
+      state.chartPoint=null;state.paymentSelection=null;state.productSelection=null;
+      paintPage();return;
+    }
+    if(action==='chart-metric'){state.chartMetric=btn.dataset.metric||'revenue';state.chartPoint=null;paintPage();return;}
+    if(action==='chart-compare'){state.chartCompare=!state.chartCompare;paintPage();return;}
+    if(action==='chart-point'){state.chartPoint=btn.dataset.date||null;paintPage();return;}
+    if(action==='payment-select'){state.paymentSelection=Number(btn.dataset.index)||0;paintPage();return;}
+    if(action==='rank-select'){state.productSelection=Number(btn.dataset.index)||0;paintPage();return;}
     if(action==='new-product'){productForm();return;}
     if(action==='edit-product'){productForm((await dataFor('products')).find(x=>x.id===Number(btn.dataset.id)));return;}
     if(action==='new-sale'){cartForm('sale');return;}
@@ -509,7 +646,25 @@ document.addEventListener('input',e=>{
     search?.setSelectionRange(pos,pos);
   }
 });
-document.addEventListener('keydown',e=>{if(e.key==='Escape' && state.modal)closeModal();});
+document.addEventListener('keydown',e=>{
+  if(e.key==='Escape' && state.modal){closeModal();return;}
+  if((e.key==='Enter'||e.key===' ') && e.target.matches('[data-action="chart-point"], .donut-slice')){
+    e.preventDefault();
+    e.target.dispatchEvent(new MouseEvent('click',{bubbles:true}));
+  }
+});
+document.addEventListener('pointerover',e=>{
+  const mark=e.target.closest('[data-viz-label]');
+  if(mark)moveVizTooltip(mark,e);
+});
+document.addEventListener('pointermove',e=>{
+  const mark=e.target.closest('[data-viz-label]');
+  if(mark)moveVizTooltip(mark,e);
+});
+document.addEventListener('pointerout',e=>{
+  const mark=e.target.closest('[data-viz-label]');
+  if(mark&&!mark.contains(e.relatedTarget))hideVizTooltip(mark);
+});
 document.addEventListener('mouseover',e=>{
   const nav=e.target.closest('[data-nav]');if(!nav||!state.user)return;
   const key=available().find(x=>x[3]===nav.dataset.nav)?.[0];
