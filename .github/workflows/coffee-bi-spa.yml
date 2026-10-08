@@ -6,6 +6,7 @@ on:
       - 'web/**'
       - 'tests/test_api_spa.py'
       - 'tests/test_cli.py'
+      - 'tests/test_seed_ui.py'
       - 'pyproject.toml'
       - 'firebase.json'
       - 'firestore.rules'
@@ -14,7 +15,7 @@ on:
       - 'requirements-dev.txt'
       - '.github/workflows/coffee-bi-spa.yml'
   push:
-    branches: ['feat/coffee-bi-spa-redesign']
+    branches: ['feat/coffee-bi-spa-redesign', 'feat/ui-redesign-firestore-seed']
 
 jobs:
   api-and-ui:
@@ -44,6 +45,8 @@ jobs:
           BI init --help
       - name: Testar CLI sem Firebase real
         run: python -m pytest -q tests/test_cli.py
+      - name: Testar seed e contrato visual
+        run: python -m pytest -q tests/test_seed_ui.py
       - name: Verificar sintaxe JavaScript
         run: node --check web/app.js
       - name: Verificar módulos Python
