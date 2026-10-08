@@ -537,11 +537,35 @@ function navigate(url,replace=false) {
   window.scrollTo({top:0,behavior:'instant'});
 }
 async function mutate(path,method,data,keys,success) {
-  await request(path,{method,body:data?JSON.stringify(data):undefined});
+  const result=await request(path,{method,body:data?JSON.stringify(data):undefined});
   invalidate(...keys);
   closeModal();
   toast(success);
   paintPage();
+  return result;
+}
+async function saveProduct(values,id='') {
+  const method=id?'PUT':'POST';
+  const saved=await request('/products'+(id?'/'+id:''),{
+    method,
+    body:JSON.stringify(values)
+  });
+
+  // Confirma persistência e substitui o cache por dados vindos do servidor.
+  // Evita que um filtro antigo ou um cache expirado faça o produto "sumir" da tela.
+  const fresh=await request('/products');
+  if(!fresh.some(product=>Number(product.id)===Number(saved.id))){
+    throw new Error('O servidor respondeu ao salvamento, mas o produto não apareceu na confirmação do Firestore.');
+  }
+
+  state.cache.set('products',{when:Date.now(),value:fresh});
+  invalidate('dashboard','bi');
+  state.search='';
+  closeModal();
+  toast(id?'Produto atualizado com sucesso.':'Produto criado com sucesso.');
+  if(pageKey()==='products')showPage('products',fresh);
+  else paintPage();
+  return saved;
 }
 document.addEventListener('click',async e=>{
   const nav=e.target.closest('[data-nav]');
@@ -608,7 +632,7 @@ document.addEventListener('submit',async e=>{
     if(kind==='product'){
       const id=values.id;delete values.id;
       for(const key of ['preco_venda','custo_unitario','estoque_atual','estoque_minimo'])values[key]=Number(values[key]);
-      await mutate('/products'+(id?'/'+id:''),id?'PUT':'POST',values,['products','dashboard','bi'],'Produto salvo.');
+      await saveProduct(values,id);
     }
     if(['sale','purchase'].includes(kind)){
       if(!state.cart.length)throw new Error('Adicione ao menos um item.');
