@@ -254,6 +254,38 @@ def init(args: argparse.Namespace) -> int:
         stop_emulator(emulator_proc)
 
 
+def seed(args: argparse.Namespace) -> int:
+    """Populate demo data using the same .env used by BI init."""
+    os.chdir(PROJECT_ROOT)
+    if not ensure_config(emulator=False):
+        return 2
+
+    project = os.getenv("FIREBASE_PROJECT_ID", "").strip()
+    emulator = os.getenv("FIRESTORE_EMULATOR_HOST")
+    if not emulator:
+        if not project:
+            _say("Erro: FIREBASE_PROJECT_ID não configurado.")
+            return 2
+        if not args.yes:
+            if not sys.stdin.isatty():
+                _say("Erro: em modo não interativo use BI seed --yes.")
+                return 2
+            confirmation = input(
+                f'Digite o ID do projeto "{project}" para popular dados de demonstração: '
+            ).strip()
+            if confirmation != project:
+                _say("[BI] Seed cancelado. Nenhum dado foi gravado.")
+                return 2
+
+    from api.seed_firestore import main as seed_main
+    argv = ["--days", str(args.days)]
+    if args.reset_demo_data:
+        argv.append("--reset-demo-data")
+    if not emulator:
+        argv.extend(["--apply", "--confirm-project-id", project])
+    return seed_main(argv)
+
+
 def make_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="BI", description="Coffee BI — inicialização do ERP"
@@ -268,16 +300,26 @@ def make_parser() -> argparse.ArgumentParser:
                        help="Reiniciar automaticamente ao alterar código")
     start.add_argument("--no-browser", action="store_true",
                        help="Não abrir a aplicação no navegador")
+
+    seed_cmd = sub.add_parser("seed", help="Popular Firestore com dados de demonstração")
+    seed_cmd.add_argument("--days", type=int, default=30,
+                          help="Dias de histórico de vendas (7 a 90)")
+    seed_cmd.add_argument("--reset-demo-data", action="store_true",
+                          help="Remover somente dados criados pelo seed antes de recriar")
+    seed_cmd.add_argument("--yes", action="store_true",
+                          help="Confirmar sem prompt (útil em automação)")
     return parser
 
 
 def main(argv: list[str] | None = None) -> int:
     args = make_parser().parse_args(argv)
-    if args.port < 1 or args.port > 65535:
-        _say("Erro: escolha uma porta entre 1 e 65535.")
-        return 2
     if args.command == "init":
+        if args.port < 1 or args.port > 65535:
+            _say("Erro: escolha uma porta entre 1 e 65535.")
+            return 2
         return init(args)
+    if args.command == "seed":
+        return seed(args)
     return 2
 
 
