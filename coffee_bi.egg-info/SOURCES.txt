@@ -1,0 +1,17 @@
+README.md
+pyproject.toml
+api/__init__.py
+api/bootstrap_admin.py
+api/cli.py
+api/firebase_db.py
+api/main.py
+api/migrate_sql_to_firestore.py
+api/passwords.py
+coffee_bi.egg-info/PKG-INFO
+coffee_bi.egg-info/SOURCES.txt
+coffee_bi.egg-info/dependency_links.txt
+coffee_bi.egg-info/entry_points.txt
+coffee_bi.egg-info/requires.txt
+coffee_bi.egg-info/top_level.txt
+tests/test_api_spa.py
+tests/test_cli.py

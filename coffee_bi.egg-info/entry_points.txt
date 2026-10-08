@@ -1,0 +1,2 @@
+[console_scripts]
+BI = api.cli:main

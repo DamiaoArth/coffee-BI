@@ -15,7 +15,10 @@ data/*.db-*
 *.sqlite3
 
 # Credenciais privadas Firebase - nunca versionar
+./credentials
+./credentials/.
 *service-account*.json
+./*service-account*.json
 *serviceAccount*.json
 firebase-adminsdk-*.json
 firebase-credentials*.json
