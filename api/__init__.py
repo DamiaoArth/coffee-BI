@@ -1,0 +1,1 @@
+"""Coffee BI application package."""
