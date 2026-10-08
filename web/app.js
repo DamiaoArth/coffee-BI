@@ -508,9 +508,74 @@ function field(name,label,value='',type='text',attrs='',optional=false) {
   return '<div class="field"><label for="fld-'+name+'">'+esc(label)+'</label>'+
    '<input id="fld-'+name+'" name="'+name+'" type="'+type+'" value="'+esc(value)+'" '+attrs+(optional?'':' required')+'></div>';
 }
+/* Branded, keyboard-friendly listbox rendered outside scrollable modal. */
+function smartSelect(id,label,options,selected='',name=id,searchable=false) {
+  state.selectOptions ||= {};
+  state.selectOptions[id]=options.map(opt=>typeof opt==='string'?{value:opt,label:opt}:opt);
+  const opts=state.selectOptions[id], initial=opts.find(o=>String(o.value)===String(selected))||opts[0];
+  const value=initial?String(initial.value):'',caption=initial?initial.label:'Selecione uma opção';
+  return '<div class="smart-select" id="smart-'+esc(id)+'"><input type="hidden" name="'+esc(name)+'" value="'+esc(value)+'">'+
+    '<button type="button" class="select-trigger" data-action="open-select" data-select="'+esc(id)+
+    '" data-searchable="'+searchable+'" aria-haspopup="listbox" aria-expanded="false" aria-label="'+esc(label)+'">'+
+    '<span class="select-caption">'+esc(caption)+'</span>'+icon('arrowDown',16)+'</button></div>';
+}
 function selectField(name,label,options,selected='') {
-  return '<div class="field"><label for="fld-'+name+'">'+esc(label)+'</label>'+
-    '<select name="'+name+'" id="fld-'+name+'">'+options.map(opt=>'<option value="'+esc(opt)+'" '+(opt===selected?'selected':'')+'>'+esc(opt)+'</option>').join('')+'</select></div>';
+  return '<div class="field"><label id="lbl-'+name+'">'+esc(label)+'</label>'+
+    smartSelect('fld-'+name,label,options,selected,name)+'</div>';
+}
+function closeDropdown() {
+  const opened=state.dropdown;
+  if(opened)document.querySelector('#smart-'+opened.id+' .select-trigger')?.setAttribute('aria-expanded','false');
+  document.getElementById('select-portal')?.remove();
+  state.dropdown=null;
+}
+function populateDropdown(filter='') {
+  const active=state.dropdown;
+  if(!active)return;
+  const node=document.getElementById('select-options');
+  if(!node)return;
+  const options=(state.selectOptions?.[active.id]||[]).filter(o=>o.label.toLocaleLowerCase('pt-BR').includes(filter.toLocaleLowerCase('pt-BR')));
+  node.innerHTML=options.slice(0,80).map((o,index)=>'<button type="button" class="select-option" role="option" data-action="choose-select" data-value="'+esc(o.value)+'" aria-selected="'+
+    (String(o.value)===active.value)+'">'+esc(o.label)+'</button>').join('')+
+    (options.length>80?'<p class="select-hint">Digite para refinar os resultados</p>':'')+
+    (!options.length?'<p class="select-hint">Nenhuma opção encontrada</p>':'');
+}
+function openDropdown(trigger) {
+  const id=trigger.dataset.select;
+  if(state.dropdown?.id===id){closeDropdown();return;}
+  closeDropdown();
+  const holder=document.getElementById('smart-'+id),options=state.selectOptions?.[id]||[];
+  if(!holder||!options.length){toast('Não existem opções disponíveis.');return;}
+  const selected=holder.querySelector('input[type=hidden]')?.value||'';
+  state.dropdown={id,value:selected};
+  const rect=trigger.getBoundingClientRect();
+  const spaceBelow=window.innerHeight-rect.bottom;
+  const height=Math.min(320,Math.max(150,options.length*39+55));
+  const placeAbove=spaceBelow<height&&rect.top>height;
+  const left=Math.min(rect.left,Math.max(8,window.innerWidth-rect.width-12));
+  const top=placeAbove?Math.max(8,rect.top-height-6):rect.bottom+6;
+  const pop=document.createElement('div');
+  pop.id='select-portal';pop.className='select-portal';pop.setAttribute('role','presentation');
+  pop.style.left=Math.max(8,left)+'px';pop.style.top=Math.max(8,top)+'px';
+  pop.style.width=rect.width+'px';pop.style.maxHeight=Math.min(height,placeAbove?rect.top-16:window.innerHeight-top-12)+'px';
+  const search=trigger.dataset.searchable==='true';
+  pop.innerHTML=(search?'<div class="select-search">'+icon('search',16)+'<input id="select-filter" type="search" autocomplete="off" placeholder="Buscar opção..." aria-label="Buscar opções"></div>':'')+
+    '<div id="select-options" role="listbox" aria-label="Opções de '+esc(trigger.getAttribute('aria-label'))+'"></div>';
+  document.body.append(pop);trigger.setAttribute('aria-expanded','true');
+  populateDropdown();
+  (search?pop.querySelector('#select-filter'):pop.querySelector('.select-option'))?.focus();
+}
+function chooseDropdown(value) {
+  const active=state.dropdown;
+  if(!active)return;
+  const selected=(state.selectOptions?.[active.id]||[]).find(o=>String(o.value)===String(value));
+  const holder=document.getElementById('smart-'+active.id);
+  if(holder&&selected){
+    holder.querySelector('input[type=hidden]').value=String(selected.value);
+    holder.querySelector('.select-caption').textContent=selected.label;
+    holder.querySelector('.select-trigger').focus();
+  }
+  closeDropdown();
 }
 function modal(title,body,submitLabel='Salvar',formName='') {
   state.modal={title,body,submitLabel,formName}; drawModal();
@@ -520,19 +585,30 @@ function drawModal() {
   if(!host||!state.modal)return;
   host.innerHTML='<div class="modal-backdrop" role="presentation"><section class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">'+
     '<div class="modal-head"><div><span class="modal-kicker">Coffee BI</span><h2 id="modal-title">'+esc(state.modal.title)+'</h2></div><button class="btn btn-ghost btn-icon" data-action="close-modal" aria-label="Fechar">'+icon('close',18)+'</button></div>'+
-    '<form id="dialog-form" data-form="'+esc(state.modal.formName)+'">'+state.modal.body+
+    '<form id="dialog-form" novalidate data-form="'+esc(state.modal.formName)+'">'+state.modal.body+
+    '<p class="form-feedback" role="alert" aria-live="assertive"></p>'+
     '<div class="modal-actions"><button type="button" class="btn btn-secondary" data-action="close-modal">Cancelar</button>'+
     '<button class="btn btn-primary" type="submit">'+esc(state.modal.submitLabel)+'</button></div></form></section></div>';
-  host.querySelector('input,select,button')?.focus();
+  host.querySelector('input:not([type=hidden]), .select-trigger,button')?.focus();
 }
-function closeModal() {state.modal=null; state.cart=[];document.querySelector('#modal-host')?.replaceChildren();}
+function closeModal() {closeDropdown();state.modal=null; state.cart=[];document.querySelector('#modal-host')?.replaceChildren();}
+function parseMoney(value) {
+  let text=String(value??'').trim().replace(/\s/g,'');
+  // Permite 1.234,56 e 1234.56 e 12,50 sem arredondamento oculto.
+  if(text.includes(',')&&text.includes('.'))text=text.replace(/\./g,'').replace(',','.');
+  else text=text.replace(',','.');
+  const parsed=Number(text);
+  if(!text||!Number.isFinite(parsed)||parsed<0||Math.round(parsed*100)!==parsed*100)
+    throw new Error('Informe um valor monetário válido com até 2 casas decimais.');
+  return parsed;
+}
 function productForm(existing) {
   const p=existing||{};
   modal(existing?'Editar produto':'Novo produto','<input type="hidden" name="id" value="'+esc(p.id||'')+'">'+
    '<div class="modal-grid">'+field('nome','Nome do produto',p.nome||'')+
    field('categoria','Categoria',p.categoria||'')+
-   field('preco_venda','Preço de venda (R$)',p.preco_venda??0,'number','step="0.01" min="0"')+
-   field('custo_unitario','Custo (R$)',p.custo_unitario??0,'number','step="0.01" min="0"')+
+   field('preco_venda','Preço de venda (R$)',p.preco_venda??0,'text','inputmode="decimal" placeholder="0,00"')+
+   field('custo_unitario','Custo (R$)',p.custo_unitario??0,'text','inputmode="decimal" placeholder="0,00"')+
    field('estoque_atual','Estoque atual',p.estoque_atual??0,'number','step="1" min="0"')+
    field('estoque_minimo','Estoque mínimo',p.estoque_minimo??0,'number','step="1" min="0"')+
    field('unidade','Unidade',p.unidade||'un')+'</div>','Salvar produto','product');
@@ -540,18 +616,29 @@ function productForm(existing) {
 function cartForm(mode) {
   state.cartMode=mode;
   const label=mode==='purchase'?'Compra':'Venda';
-  modal('Registrar '+label.toLowerCase(),(mode==='purchase'?field('fornecedor','Fornecedor'):'')+
-   selectField('metodo_pagamento','Forma de pagamento',['pix','dinheiro','cartão de crédito','cartão de débito','transferência','boleto'])+
-   field('data','Data',today(),'date')+
-   '<div class="field"><label>Adicionar itens</label><div class="inline-fields">'+
-   '<div class="field"><label for="item-product">Produto</label><select id="item-product" aria-label="Produto"></select></div>'+
-   '<div class="field"><label for="item-qty">Qtd.</label><input id="item-qty" type="number" min="1" value="1"></div>'+
-   (mode==='purchase'?'<div class="field"><label for="item-price">Custo (R$)</label><input id="item-price" type="number" step=".01" min="0" value="0"></div>':'<div style="align-self:end"><button class="btn btn-secondary" type="button" data-action="cart-add">Adicionar</button></div>')+
-   '</div></div>'+(mode==='purchase'?'<button class="btn btn-secondary" type="button" data-action="cart-add">Adicionar item</button>':'')+
-   '<div id="cart-area"></div>','Finalizar '+label.toLowerCase(),mode);
+  const methods=['pix','dinheiro','cartão de crédito','cartão de débito','transferência','boleto'];
+  const fields=(mode==='purchase'?field('fornecedor','Fornecedor'):'')+
+    selectField('metodo_pagamento','Forma de pagamento',methods)+
+    field('data','Data',today(),'date');
+  const picker='<div class="cart-add-grid"><div class="field"><label>Produto</label>'+
+    smartSelect('item-product','Produto',[],'','_product_unused',true)+'</div>'+
+    field('item-qty','Quantidade',1,'number','min="1" step="1"')+
+    (mode==='purchase'?field('item-price','Custo (R$)',0,'text','inputmode="decimal"'):'')+
+    '<button class="btn btn-secondary cart-add-btn" type="button" data-action="cart-add">'+
+      icon('plus',16)+' Adicionar</button></div>';
+  modal('Registrar '+label.toLowerCase(),fields+
+    '<div class="cart-section"><strong>Adicionar itens</strong>'+picker+'</div>'+
+    '<div id="cart-area"></div>','Finalizar '+label.toLowerCase(),mode);
+  const add=document.querySelector('[data-action="cart-add"]');
+  if(add)add.disabled=true;
   dataFor('products').then(products=>{
-    const sel=document.querySelector('#item-product');
-    if(sel)sel.innerHTML=products.map(p=>'<option value="'+p.id+'">'+esc(p.nome)+' · '+money(p.preco_venda)+'</option>').join('');
+    if(!state.modal||state.modal.formName!==mode)return;
+    const holder=document.querySelector('#smart-item-product');
+    const options=products.map(p=>({value:String(p.id),label:p.nome+' · '+money(p.preco_venda)}));
+    if(holder)holder.outerHTML=smartSelect('item-product','Produto',options,'','_product_unused',true);
+    const btn=document.querySelector('[data-action="cart-add"]');
+    if(btn)btn.disabled=options.length===0;
+    if(!options.length)toast('Cadastre um produto antes de registrar '+label.toLowerCase()+'.');
   }).catch(e=>toast(e.message));
   updateCart();
 }
@@ -567,11 +654,14 @@ function updateCart() {
   }).join('')+'<div class="cart-row" style="border-top:1px solid #e0e9e3;padding-top:10px"><strong>Total</strong><strong>'+
   money(state.cart.reduce((x,item)=>x+item.quantidade*item.preco_unitario,0))+'</strong></div></div>';
 }
-function transactionForm() {
-  modal('Novo lançamento',selectField('tipo','Tipo',['entrada','saída'])+
-   field('descricao','Descrição')+field('categoria','Categoria')+
-   field('valor','Valor (R$)','0','number','step=".01" min=".01"')+
-   field('data','Data',today(),'date'),'Registrar lançamento','transaction');
+function transactionForm(existing) {
+  const t=existing||{};
+  modal(existing?'Editar lançamento':'Novo lançamento',
+   '<input type="hidden" name="id" value="'+esc(t.id||'')+'">'+
+   selectField('tipo','Tipo',['entrada','saída'],t.tipo||'entrada')+
+   field('descricao','Descrição',t.descricao||'')+field('categoria','Categoria',t.categoria||'')+
+   field('valor','Valor (R$)',t.valor??'0','text','inputmode="decimal"')+
+   field('data','Data',t.data||today(),'date'),existing?'Salvar alterações':'Registrar lançamento','transaction');
 }
 function employeeForm(existing) {
   const p=existing||{};
@@ -636,13 +726,24 @@ document.addEventListener('click',async e=>{
   if(nav){e.preventDefault();navigate(nav.dataset.nav);return;}
   if(e.target.classList.contains('modal-backdrop')){closeModal();return;}
   const btn=e.target.closest('[data-action]');
-  if(!btn)return;
+  if(!btn){if(state.dropdown&&!e.target.closest('#select-portal,.smart-select'))closeDropdown();return;}
   const action=btn.dataset.action;
   try{
+    if(action==='open-select'){openDropdown(btn);return;}
+    if(action==='choose-select'){chooseDropdown(btn.dataset.value);return;}
+    if(state.dropdown&&!btn.closest('#select-portal,.smart-select'))closeDropdown();
     if(action==='close-modal'){closeModal();return;}
     if(action==='toggle-password'){state.showPassword=!state.showPassword;const p=document.querySelector('#password');if(p){p.type=state.showPassword?'text':'password';btn.textContent=state.showPassword?'Ocultar':'Mostrar';p.focus();}return;}
     if(action==='logout'){await request('/auth/logout',{method:'POST'});state.user=null;state.csrf='';state.cache.clear();history.replaceState({},'','/');render();return;}
     if(action==='retry'){invalidate(pageKey());paintPage();return;}
+    if(action==='table-sort'){
+      const pref=tablePrefs(btn.dataset.table),sort=btn.dataset.sort;
+      pref.direction=pref.sort===sort?-pref.direction:1;pref.sort=sort;pref.page=1;paintPage();return;
+    }
+    if(action==='table-page'){
+      const pref=tablePrefs(btn.dataset.table);pref.page=Number(btn.dataset.page)||1;paintPage();return;
+    }
+    if(action==='refresh-products'){invalidate('products');await dataFor('products');paintPage();return;}
     if(action==='set-days'){
       state.days=Number(btn.dataset.days)||30;
       state.chartPoint=null;state.paymentSelection=null;state.productSelection=null;
@@ -658,17 +759,26 @@ document.addEventListener('click',async e=>{
     if(action==='new-sale'){cartForm('sale');return;}
     if(action==='new-purchase'){cartForm('purchase');return;}
     if(action==='new-transaction'){transactionForm();return;}
+    if(action==='edit-transaction'){transactionForm((await dataFor('finance')).find(x=>x.id===Number(btn.dataset.id)));return;}
     if(action==='new-employee'){employeeForm();return;}
     if(action==='edit-employee'){employeeForm((await dataFor('team')).find(x=>x.id===Number(btn.dataset.id)));return;}
     if(action==='new-user'){newUserForm();return;}
     if(action==='cart-remove'){state.cart.splice(Number(btn.dataset.id),1);updateCart();return;}
     if(action==='cart-add'){
-      const id=Number(document.querySelector('#item-product')?.value);
-      const quantity=Number(document.querySelector('#item-qty')?.value);
+      const id=Number(document.querySelector('#smart-item-product input[type=hidden]')?.value);
+      const quantity=Number(document.querySelector('#fld-item-qty')?.value);
       const p=(await dataFor('products')).find(x=>x.id===id);
-      const price=state.cartMode==='purchase'?Number(document.querySelector('#item-price')?.value):p?.preco_venda;
+      const price=state.cartMode==='purchase'?Number(document.querySelector('#fld-item-price')?.value):p?.preco_venda;
       if(!p||!Number.isInteger(quantity)||quantity<1||!Number.isFinite(price)||price<0)throw new Error('Confira o produto, quantidade e preço.');
       state.cart.push({id_produto:id,quantidade,preco_unitario:price});updateCart();return;
+    }
+    if(action==='archive-product'){
+      if(!confirm('Arquivar este produto? Ele deixará de aparecer no catálogo ativo.'))return;
+      await mutate('/products/'+Number(btn.dataset.id),'DELETE',null,['products','dashboard','bi'],'Produto arquivado.');return;
+    }
+    if(action==='archive-employee'){
+      if(!confirm('Inativar este funcionário?'))return;
+      await mutate('/employees/'+Number(btn.dataset.id),'DELETE',null,['team'],'Funcionário inativado.');return;
     }
     if(action==='delete-transaction') {
       if(!confirm('Excluir este lançamento? Esta ação não pode ser desfeita.'))return;
@@ -691,11 +801,19 @@ document.addEventListener('submit',async e=>{
   if(e.target.id!=='dialog-form')return;
   e.preventDefault();
   const form=e.target,values=Object.fromEntries(new FormData(form).entries()),kind=form.dataset.form;
-  const submit=form.querySelector('[type="submit"]');submit.disabled=true;
+  const submit=form.querySelector('[type="submit"]');
+  if(!form.checkValidity()){
+    toast('Confira os campos obrigatórios destacados antes de salvar.');
+    form.reportValidity();
+    return;
+  }
+  submit.disabled=true;
   try{
     if(kind==='product'){
       const id=values.id;delete values.id;
-      for(const key of ['preco_venda','custo_unitario','estoque_atual','estoque_minimo'])values[key]=Number(values[key]);
+      for(const key of ['preco_venda','custo_unitario'])values[key]=parseMoney(values[key]);
+      for(const key of ['estoque_atual','estoque_minimo'])values[key]=Number(values[key]);
+      if(!Number.isInteger(values.estoque_atual)||!Number.isInteger(values.estoque_minimo))throw new Error('Estoque deve ser um número inteiro.');
       await saveProduct(values,id);
     }
     if(['sale','purchase'].includes(kind)){
@@ -708,8 +826,10 @@ document.addEventListener('submit',async e=>{
         ['sales','purchases','dashboard','bi','products'],kind==='sale'?'Venda registrada com sucesso.':'Compra registrada e estoque atualizado.');
     }
     if(kind==='transaction'){
-      values.valor=Number(values.valor);
-      await mutate('/transactions','POST',values,['finance','bi'],'Lançamento criado.');
+      const id=values.id;delete values.id;
+      values.valor=parseMoney(values.valor);
+      await mutate('/transactions'+(id?'/'+id:''),id?'PUT':'POST',values,['finance','bi'],
+        id?'Lançamento atualizado.':'Lançamento criado.');
     }
     if(kind==='employee'){
       const id=values.id;delete values.id;values.ativo=values.ativo==='true';
@@ -718,16 +838,19 @@ document.addEventListener('submit',async e=>{
     if(kind==='user'){
       await mutate('/users','POST',values,['team'],'Acesso criado com sucesso.');
     }
-  }catch(error){toast(error.message);}finally{submit.disabled=false;}
+  }catch(error){toast(error.message);const feedback=form.querySelector('.form-feedback');if(feedback)feedback.textContent=error.message;}
+  finally{submit.disabled=false;}
 });
 document.addEventListener('change',e=>{
+  if(e.target.matches('.rows-size')){const pref=tablePrefs(e.target.dataset.table);pref.size=Number(e.target.value)||10;pref.page=1;paintPage();return;}
   if(e.target.id==='days') {
     state.days=Number(e.target.value);paintPage();
   }
 });
 document.addEventListener('input',e=>{
+  if(e.target.id==='select-filter'){populateDropdown(e.target.value);return;}
   if(e.target.id==='search'){
-    state.search=e.target.value;
+    state.search=e.target.value;tablePrefs('products').page=1;
     const pos=e.target.selectionStart;
     showPage('products',state.cache.get('products')?.value||[]);
     const search=document.querySelector('#search');search?.focus();
@@ -735,7 +858,14 @@ document.addEventListener('input',e=>{
   }
 });
 document.addEventListener('keydown',e=>{
+  if(e.key==='Escape' && state.dropdown){closeDropdown();return;}
   if(e.key==='Escape' && state.modal){closeModal();return;}
+  if((e.key==='ArrowDown'||e.key==='ArrowUp')&&e.target.matches('.select-trigger')){e.preventDefault();openDropdown(e.target);return;}
+  if(e.target.closest('#select-portal')&&['ArrowDown','ArrowUp'].includes(e.key)){
+    e.preventDefault();const options=[...document.querySelectorAll('#select-options .select-option')];if(!options.length)return;
+    const current=options.indexOf(document.activeElement),delta=e.key==='ArrowDown'?1:-1;
+    options[(current+delta+options.length)%options.length].focus();return;
+  }
   if((e.key==='Enter'||e.key===' ') && e.target.matches('[data-action="chart-point"], .donut-slice')){
     e.preventDefault();
     e.target.dispatchEvent(new MouseEvent('click',{bubbles:true}));
