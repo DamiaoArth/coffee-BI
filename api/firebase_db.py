@@ -12,9 +12,17 @@ from typing import Any
 
 import firebase_admin
 from firebase_admin import firestore
+from firebase_admin import credentials as admin_credentials
+from google.auth.credentials import AnonymousCredentials
 from google.cloud.firestore_v1 import Client
 
 COLLECTIONS = ("users", "employees", "products", "sales", "purchases", "transactions")
+
+
+class EmulatorCredentials(admin_credentials.Base):
+    """Use anonymous credentials ONLY when explicitly connected to a local emulator."""
+    def get_credential(self):
+        return AnonymousCredentials()
 
 
 @lru_cache(maxsize=1)
@@ -28,12 +36,16 @@ def get_firestore() -> Client:
             "Configure FIREBASE_PROJECT_ID e GOOGLE_APPLICATION_CREDENTIALS "
             "ou credenciais padrão da plataforma. Não foi configurado um banco Firebase."
         )
+    emulator = os.getenv("FIRESTORE_EMULATOR_HOST")
+    if emulator and os.getenv("APP_ENV") == "production":
+        raise RuntimeError("FIRESTORE_EMULATOR_HOST é proibido com APP_ENV=production.")
     try:
         app = firebase_admin.get_app()
     except ValueError:
         # Uses Application Default Credentials on servers; emulator is recognized
         # automatically by the Firestore client when FIRESTORE_EMULATOR_HOST is set.
-        app = firebase_admin.initialize_app(options={"projectId": project})
+        credential = EmulatorCredentials() if emulator else None
+        app = firebase_admin.initialize_app(credential=credential, options={"projectId": project})
     return firestore.client(app=app)
 
 
