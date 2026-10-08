@@ -104,12 +104,20 @@ function panel(title,subtitle,content) {
   '<div class="panel-body">'+content+'</div></section>';
 }
 function skeleton(type) {
+  // Cada seção mantém a anatomia visual do conteúdo real durante a primeira consulta.
   const stats='<div class="stats-grid loading-screen">'+Array(4).fill('<div class="stat-card"><div class="skeleton stat-skeleton"></div></div>').join('')+'</div>';
   const chart=panel('Carregando indicadores','Sincronizando dados','<div class="skeleton chart-skeleton"></div>');
-  const table=panel('Carregando registros','',Array(6).fill('<div class="skeleton row-skeleton"></div>').join(''));
+  const tableRows=Array(6).fill('<div class="skeleton row-skeleton"></div>').join('');
+  const records=panel('Carregando registros','Buscando informações',tableRows);
   const widget=panel('Carregando informações','',Array(3).fill('<div class="skeleton group-skeleton" style="height:42px;margin-bottom:14px"></div>').join(''));
-  if(['dashboard','bi'].includes(type)) return stats+'<div class="grid-main">'+chart+widget+'</div><div class="grid-two">'+widget+widget+'</div>';
-  return '<div class="grid-main" style="grid-template-columns:1fr">'+table+'</div>';
+  if(type==='dashboard'||type==='bi')return stats+'<div class="grid-main">'+chart+widget+'</div><div class="grid-two">'+widget+widget+'</div>';
+  if(type==='products')return '<div class="panel"><div class="skeleton header-skeleton"></div><div class="skeleton group-skeleton" style="height:42px;margin-bottom:18px;max-width:360px"></div>'+tableRows+'</div>';
+  if(type==='sales')return stats+records;
+  if(type==='purchases')return '<div class="grid-two">'+widget+widget+'</div>'+records;
+  if(type==='finance')return stats+records;
+  if(type==='team')return '<div class="panel"><div class="skeleton header-skeleton"></div>'+
+   Array(5).fill('<div style="display:flex;align-items:center;gap:16px;margin-bottom:15px"><div class="skeleton circle-skeleton"></div><div class="skeleton" style="height:18px;flex:1"></div><div class="skeleton pill-skeleton"></div></div>').join('')+'</div>';
+  return records;
 }
 function lineChart(series) {
   if (!series?.length) return empty('Sem vendas no período','Registre uma venda para começar a visualizar seu faturamento.');
