@@ -270,7 +270,7 @@ function loginView() {
 }
 function field(name,label,value='',type='text',attrs='',optional=false) {
   return '<div class="field"><label for="fld-'+name+'">'+esc(label)+'</label>'+
-   '<input id="fld-'+name+'" name="'+name+'" type="'+type+'" value="'+esc(value)+'" '+attrs+'+(optional?'':' required')+'></div>';
+   '<input id="fld-'+name+'" name="'+name+'" type="'+type+'" value="'+esc(value)+'" '+attrs+(optional?'':' required')+'></div>';
 }
 function selectField(name,label,options,selected='') {
   return '<div class="field"><label for="fld-'+name+'">'+esc(label)+'</label>'+
