@@ -74,6 +74,40 @@ def test_login_csrf_rbac_logout(client):
     assert http.get("/api/products").status_code == 401
 
 
+
+def test_product_crud_persists_and_is_visible(client):
+    http, db = client
+    csrf = login(http)
+
+    created = http.post(
+        "/api/products", headers=csrf,
+        json=product_payload(nome="Cold Brew", preco_venda=18.5, estoque_atual=12),
+    )
+    assert created.status_code == 201, created.text
+    product = created.json()
+    pid = product["id"]
+
+    snap = db.collection("products").document(str(pid)).get()
+    assert snap.exists
+    assert snap.to_dict()["nome"] == "Cold Brew"
+    listed = http.get("/api/products")
+    assert listed.status_code == 200
+    assert any(x["id"] == pid and x["nome"] == "Cold Brew" for x in listed.json())
+
+    updated = http.put(
+        f"/api/products/{pid}", headers=csrf,
+        json=product_payload(nome="Cold Brew 500ml", preco_venda=21, estoque_atual=9),
+    )
+    assert updated.status_code == 200, updated.text
+    assert updated.json()["nome"] == "Cold Brew 500ml"
+    listed_after_update = http.get("/api/products").json()
+    assert any(x["id"] == pid and x["nome"] == "Cold Brew 500ml" for x in listed_after_update)
+
+    archived = http.delete(f"/api/products/{pid}", headers=csrf)
+    assert archived.status_code == 200, archived.text
+    assert not any(x["id"] == pid for x in http.get("/api/products").json())
+    assert any(x["id"] == pid and x["ativo"] is False for x in http.get("/api/products?all=true").json())
+
 def test_atomic_sale_updates_stock_without_overselling(client):
     http, db = client
     csrf = login(http)
