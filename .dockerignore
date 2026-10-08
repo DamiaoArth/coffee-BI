@@ -1,0 +1,20 @@
+# Nunca incluir segredos ou dados locais na imagem
+.git
+.github
+.env
+.env.*
+!.env.example
+*service-account*.json
+*serviceAccount*.json
+firebase-adminsdk-*.json
+firebase-credentials*.json
+data
+*.db
+*.sqlite3
+__pycache__
+**/__pycache__
+.pytest_cache
+.venv
+.venv*
+node_modules
+*.zip
