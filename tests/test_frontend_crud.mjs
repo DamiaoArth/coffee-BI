@@ -11,7 +11,7 @@ function harness() {
   const handlers={};
   const root={innerHTML:''};
   const toast={textContent:'',classList:{add(){},remove(){}}};
-  const modalHost={innerHTML:'',replaceChildren(){this.innerHTML='';}};
+  const modalHost={innerHTML:'',replaceChildren(){this.innerHTML='';},querySelector(){return {focus(){}};}};
   const content={innerHTML:''};
   const calls=[];
   const created={id:51,nome:'Cold Brew',categoria:'Cafés',preco_venda:18.5,
@@ -117,7 +117,7 @@ test('os métodos dos formulários e ações existem com caminhos REST corretos'
   for(const token of [
     "await saveProduct(values,id)",
     "id?'PUT':'POST'",
-    "method,'POST'",
+    "'/sales':'/purchases','POST'",
     "if(action==='archive-product')",
     "if(action==='archive-employee')",
     "data-action=\"table-sort\"",
