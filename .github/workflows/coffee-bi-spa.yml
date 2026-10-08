@@ -1,0 +1,34 @@
+name: Coffee BI SPA - checks
+on:
+  pull_request:
+    paths:
+      - 'api/**'
+      - 'web/**'
+      - 'tests/test_api_spa.py'
+      - 'models/**'
+      - 'config/**'
+      - 'services/auth_service.py'
+      - 'requirements-api.txt'
+      - 'requirements-dev.txt'
+      - '.github/workflows/coffee-bi-spa.yml'
+  push:
+    branches: ['feat/coffee-bi-spa-redesign']
+jobs:
+  api-and-ui:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Instalar dependências
+        run: pip install -r requirements-dev.txt
+      - name: Verificar frontend JavaScript
+        run: node --check web/app.js
+      - name: Compilar módulo FastAPI
+        run: python -m compileall -q api
+      - name: Testes de integração da API
+        run: pytest -q tests/test_api_spa.py
