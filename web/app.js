@@ -67,6 +67,33 @@ function toast(message) {
   clearTimeout(toastNode._timer);
   toastNode._timer = setTimeout(()=>toastNode.classList.remove('visible'),3400);
 }
+function moveVizTooltip(mark,event) {
+  const stage=mark.closest('.viz-stage');
+  const tip=stage?.querySelector('.viz-tooltip');
+  if(!stage||!tip)return;
+  tip.replaceChildren();
+  const title=document.createElement('strong');
+  title.textContent=mark.dataset.vizLabel||'';
+  const value=document.createElement('span');
+  value.textContent=mark.dataset.vizValue||'';
+  tip.append(title,value);
+  if(mark.dataset.vizSub){
+    const sub=document.createElement('small');
+    sub.textContent=mark.dataset.vizSub;
+    tip.append(sub);
+  }
+  const rect=stage.getBoundingClientRect();
+  const pointerX=event.clientX||rect.left+rect.width/2;
+  const pointerY=event.clientY||rect.top+rect.height/2;
+  const x=Math.min(Math.max(12,pointerX-rect.left+12),Math.max(12,rect.width-178));
+  const y=Math.min(Math.max(10,pointerY-rect.top-58),Math.max(10,rect.height-82));
+  tip.style.left=x+'px';
+  tip.style.top=y+'px';
+  tip.classList.add('visible');
+}
+function hideVizTooltip(mark) {
+  mark.closest('.viz-stage')?.querySelector('.viz-tooltip')?.classList.remove('visible');
+}
 async function request(path, options={}) {
   const method = options.method || 'GET';
   const headers = {'Accept':'application/json', ...(options.body?{'Content-Type':'application/json'}:{}),...(options.headers||{})};
@@ -528,6 +555,16 @@ document.addEventListener('click',async e=>{
     if(action==='toggle-password'){state.showPassword=!state.showPassword;const p=document.querySelector('#password');if(p){p.type=state.showPassword?'text':'password';btn.textContent=state.showPassword?'Ocultar':'Mostrar';p.focus();}return;}
     if(action==='logout'){await request('/auth/logout',{method:'POST'});state.user=null;state.csrf='';state.cache.clear();history.replaceState({},'','/');render();return;}
     if(action==='retry'){invalidate(pageKey());paintPage();return;}
+    if(action==='set-days'){
+      state.days=Number(btn.dataset.days)||30;
+      state.chartPoint=null;state.paymentSelection=null;state.productSelection=null;
+      paintPage();return;
+    }
+    if(action==='chart-metric'){state.chartMetric=btn.dataset.metric||'revenue';state.chartPoint=null;paintPage();return;}
+    if(action==='chart-compare'){state.chartCompare=!state.chartCompare;paintPage();return;}
+    if(action==='chart-point'){state.chartPoint=btn.dataset.date||null;paintPage();return;}
+    if(action==='payment-select'){state.paymentSelection=Number(btn.dataset.index)||0;paintPage();return;}
+    if(action==='rank-select'){state.productSelection=Number(btn.dataset.index)||0;paintPage();return;}
     if(action==='new-product'){productForm();return;}
     if(action==='edit-product'){productForm((await dataFor('products')).find(x=>x.id===Number(btn.dataset.id)));return;}
     if(action==='new-sale'){cartForm('sale');return;}
@@ -609,7 +646,25 @@ document.addEventListener('input',e=>{
     search?.setSelectionRange(pos,pos);
   }
 });
-document.addEventListener('keydown',e=>{if(e.key==='Escape' && state.modal)closeModal();});
+document.addEventListener('keydown',e=>{
+  if(e.key==='Escape' && state.modal){closeModal();return;}
+  if((e.key==='Enter'||e.key===' ') && e.target.matches('[data-action="chart-point"], .donut-slice')){
+    e.preventDefault();
+    e.target.dispatchEvent(new MouseEvent('click',{bubbles:true}));
+  }
+});
+document.addEventListener('pointerover',e=>{
+  const mark=e.target.closest('[data-viz-label]');
+  if(mark)moveVizTooltip(mark,e);
+});
+document.addEventListener('pointermove',e=>{
+  const mark=e.target.closest('[data-viz-label]');
+  if(mark)moveVizTooltip(mark,e);
+});
+document.addEventListener('pointerout',e=>{
+  const mark=e.target.closest('[data-viz-label]');
+  if(mark&&!mark.contains(e.relatedTarget))hideVizTooltip(mark);
+});
 document.addEventListener('mouseover',e=>{
   const nav=e.target.closest('[data-nav]');if(!nav||!state.user)return;
   const key=available().find(x=>x[3]===nav.dataset.nav)?.[0];
