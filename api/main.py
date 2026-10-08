@@ -613,42 +613,95 @@ def build_dashboard(db: Client, days: int) -> dict:
     days = min(max(days, 1), 365)
     today = business_today()
     first = today - timedelta(days=days - 1)
+    previous_end = first - timedelta(days=1)
+    previous_first = previous_end - timedelta(days=days - 1)
+
     sales_rows = period_rows(db, "sales", first.isoformat(), today.isoformat())
+    previous_sales = period_rows(
+        db, "sales", previous_first.isoformat(), previous_end.isoformat()
+    )
     purchase_rows = period_rows(db, "purchases", first.isoformat(), today.isoformat())
+
     sales_total = sum(x["valor_total_centavos"] for x in sales_rows)
+    previous_total = sum(x["valor_total_centavos"] for x in previous_sales)
     purchased_total = sum(x["valor_total_centavos"] for x in purchase_rows)
-    today_total = sum(x["valor_total_centavos"] for x in sales_rows
-                      if x["data"] == today.isoformat())
+    today_total = sum(
+        x["valor_total_centavos"] for x in sales_rows if x["data"] == today.isoformat()
+    )
+
     products_rows = all_records(db, "products", limit=2000)
     active = [p for p in products_rows if p.get("ativo", True)]
     low = sorted(
         (p for p in active if p["estoque_atual"] <= p["estoque_minimo"]),
         key=lambda p: p["estoque_atual"],
     )[:10]
-    days_map: dict[str, int] = {}
+
+    def daily_series(rows: list[dict], start: date, length: int) -> list[dict]:
+        daily: dict[str, dict[str, int]] = {}
+        for sale in rows:
+            day = daily.setdefault(sale["data"], {"total": 0, "vendas": 0})
+            day["total"] += int(sale["valor_total_centavos"])
+            day["vendas"] += 1
+        series = []
+        for offset in range(length):
+            current = (start + timedelta(days=offset)).isoformat()
+            values = daily.get(current, {"total": 0, "vendas": 0})
+            total = values["total"]
+            count = values["vendas"]
+            series.append({
+                "data": current,
+                "total": reais(total),
+                "vendas": count,
+                "ticket_medio": reais(total // count) if count else 0,
+            })
+        return series
+
     tops: dict[str, int] = {}
     payments: dict[str, int] = {}
     for sale in sales_rows:
-        days_map[sale["data"]] = days_map.get(sale["data"], 0) + sale["valor_total_centavos"]
         method = sale["metodo_pagamento"]
-        payments[method] = payments.get(method, 0) + sale["valor_total_centavos"]
+        payments[method] = payments.get(method, 0) + int(sale["valor_total_centavos"])
         for line in sale.get("itens", []):
             name = line.get("nome", "Produto")
             tops[name] = tops.get(name, 0) + int(line["quantidade"])
+
+    def delta(current: int, previous: int) -> float | None:
+        if previous == 0:
+            return None
+        return round((current - previous) / previous * 100, 1)
+
+    previous_count = len(previous_sales)
+    previous_ticket = previous_total // previous_count if previous_count else 0
+    current_ticket = sales_total // len(sales_rows) if sales_rows else 0
+
     return {
-        "periodo": days, "faturamento": reais(sales_total),
+        "periodo": days,
+        "faturamento": reais(sales_total),
         "vendas": len(sales_rows),
-        "ticket_medio": reais(sales_total // len(sales_rows)) if sales_rows else 0,
+        "ticket_medio": reais(current_ticket),
         "vendas_hoje": reais(today_total),
-        "produtos_ativos": len(active), "estoque_baixo": [product_json(p) for p in low],
+        "produtos_ativos": len(active),
+        "estoque_baixo": [product_json(p) for p in low],
         "compras": reais(purchased_total),
-        "serie": [{"data": d, "total": reais(v)} for d, v in sorted(days_map.items())],
+        "serie": daily_series(sales_rows, first, days),
+        "serie_anterior": daily_series(previous_sales, previous_first, days),
+        "comparacao": {
+            "faturamento": delta(sales_total, previous_total),
+            "vendas": delta(len(sales_rows), previous_count),
+            "ticket_medio": delta(current_ticket, previous_ticket),
+        },
         "top_produtos": [
             {"nome": name, "quantidade": quantity}
-            for name, quantity in sorted(tops.items(), key=lambda x: x[1], reverse=True)[:5]
+            for name, quantity in sorted(
+                tops.items(), key=lambda x: x[1], reverse=True
+            )[:5]
         ],
-        "pagamentos": [{"nome": name, "total": reais(value)}
-                       for name, value in sorted(payments.items(), key=lambda x: x[1], reverse=True)],
+        "pagamentos": [
+            {"nome": name, "total": reais(value)}
+            for name, value in sorted(
+                payments.items(), key=lambda x: x[1], reverse=True
+            )
+        ],
     }
 
 
