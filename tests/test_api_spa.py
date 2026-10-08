@@ -108,6 +108,67 @@ def test_product_crud_persists_and_is_visible(client):
     assert not any(x["id"] == pid for x in http.get("/api/products").json())
     assert any(x["id"] == pid and x["ativo"] is False for x in http.get("/api/products?all=true").json())
 
+def test_product_crud_with_missing_counter_keeps_existing_ids(client):
+    http, db = client
+    csrf = login(http)
+    # Simula dado pré-existente no Firestore, sem documento de contador.
+    db.collection("_counters").document("products").delete()
+    db.collection("products").document("47").set({
+        "id": 47, "nome": "Produto legado", "categoria": "Cafés",
+        "preco_venda_centavos": 1200, "custo_unitario_centavos": 500,
+        "estoque_atual": 9, "estoque_minimo": 1, "unidade": "un", "ativo": True,
+    })
+    created = http.post("/api/products", headers=csrf,
+                        json=product_payload(nome="Produto novo"))
+    assert created.status_code == 201, created.text
+    assert created.json()["id"] == 48
+    assert db.collection("products").document("47").get().to_dict()["nome"] == "Produto legado"
+
+
+def test_http_methods_and_transaction_employee_crud(client):
+    http, db = client
+    csrf = login(http)
+    routes = {path: set(methods.keys()) for path, methods in api.app.openapi()["paths"].items()}
+    for path, expected in {
+        "/api/products": {"get", "post"},
+        "/api/products/{pid}": {"put", "delete"},
+        "/api/transactions": {"get", "post"},
+        "/api/transactions/{tid}": {"put", "delete"},
+        "/api/employees": {"get", "post"},
+        "/api/employees/{eid}": {"put", "delete"},
+        "/api/sales": {"get", "post"},
+        "/api/purchases": {"get", "post"},
+        "/api/users": {"get", "post"},
+    }.items():
+        assert expected <= routes[path], (path, routes.get(path))
+
+    record = http.post("/api/transactions", headers=csrf, json={
+        "tipo": "entrada", "descricao": "Café evento", "categoria": "eventos",
+        "valor": "40.50",
+    })
+    assert record.status_code == 201, record.text
+    tid = record.json()["id"]
+    updated = http.put(f"/api/transactions/{tid}", headers=csrf, json={
+        "tipo": "saída", "descricao": "Café evento - custo", "categoria": "eventos",
+        "valor": "30.25",
+    })
+    assert updated.status_code == 200, updated.text
+    assert any(x["id"] == tid and x["valor"] == 30.25 for x in http.get("/api/transactions").json())
+    assert http.delete(f"/api/transactions/{tid}", headers=csrf).status_code == 200
+
+    emp = http.post("/api/employees", headers=csrf, json={
+        "nome": "Barista Demo", "cargo": "funcionario", "ativo": True,
+    })
+    assert emp.status_code == 201, emp.text
+    eid = emp.json()["id"]
+    assert http.put(f"/api/employees/{eid}", headers=csrf, json={
+        "nome": "Barista II", "cargo": "funcionario", "ativo": True,
+    }).status_code == 200
+    deleted = http.delete(f"/api/employees/{eid}", headers=csrf)
+    assert deleted.status_code == 200, deleted.text
+    assert next(x for x in http.get("/api/employees").json() if x["id"] == eid)["ativo"] is False
+
+
 def test_atomic_sale_updates_stock_without_overselling(client):
     http, db = client
     csrf = login(http)
