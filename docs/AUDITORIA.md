@@ -27,6 +27,7 @@ Base analisada: `c1863b791205d844c38b7da37614bad7c5c93c5a`, branch `main`.
 | P2 | Métrica de vendas do mês contava dias agrupados, em vez de vendas. | Soma de `Quantidade`; janela de sete dias corrigida no dashboard principal antigo. |
 | P2 | Relatório de lucro podia falhar em receita zero; produtos com mesmo nome eram agrupados juntos. | Tratamento de divisão por zero e agrupamento por ID/nome. |
 | P2 | Edição de vários estoques confirmava cada linha separadamente. | Operação de lote com um commit e rollback integral. |
+| P1 | SQLAlchemy recente escolhia psycopg3 ao receber URL PostgreSQL genérica, mas o projeto instalava psycopg2. | Normalização de postgres:// e postgresql:// para postgresql+psycopg2://, com teste de carregamento do driver. |
 | P2 | SQLite não habilitava integridade referencial. | `PRAGMA foreign_keys=ON`, incluindo exclusão de itens ao cancelar movimentos. |
 | P2 | Interface sem tabela organizada, paginação e feedback de operação. | Layout responsivo, tabela ordenável, busca, status, páginas/tamanho de página, CSV, modais e erros visíveis. |
 | P2 | Gráficos pouco exploráveis e sem filtros claros. | Filtro de período, valores por hover/foco e adaptação ao tamanho da tela. |
@@ -36,7 +37,7 @@ Base analisada: `c1863b791205d844c38b7da37614bad7c5c93c5a`, branch `main`.
 
 ## Verificação local
 
-- **18 testes de backend:** CRUD/persistência, validação, permissões, logout, origem, totais, rollback, cancelamentos, compra/custo, relatórios, Unicode, paginação, concorrência, versão desatualizada, migração e redefinição de senha.
+- **19 testes de backend:** CRUD/persistência, validação, permissões, logout, origem, totais, rollback, cancelamentos, compra/custo, relatórios, Unicode, paginação, concorrência, versão desatualizada, migração e redefinição de senha.
 - **Chromium real:** criação/edição/desativação/reativação de produto; persistência após recarregar; venda/compra e cancelamentos; erro por estoque insuficiente; equipe/financeiro; busca, ordenação, paginação, gráfico, layout móvel e logout. Sem exceções de JavaScript.
 - **Streamlit AppTest:** login, seis páginas, BI com todas as opções, criação vinculada de funcionário/usuário e bloqueio após desativação.
 - Verificação de sintaxe do JavaScript, compilação Python, lint e diff.

@@ -37,3 +37,13 @@ def test_additive_migration_preserves_existing_product(tmp_path, monkeypatch):
         ).one()
         assert tuple(row) == ("Café antigo", 30, 1)
     old_engine.dispose()
+
+
+def test_postgresql_default_driver_can_be_loaded_without_psycopg3():
+    for url in [
+        "postgresql://test:test@localhost/test",
+        "postgres://test:test@localhost/test",
+    ]:
+        test_engine = create_engine(database.normalize_database_url(url))
+        assert test_engine.dialect.driver == "psycopg2"
+        test_engine.dispose()

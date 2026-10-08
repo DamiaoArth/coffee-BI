@@ -38,7 +38,7 @@ python -m uvicorn api.main:app --reload
 
 Abra **http://127.0.0.1:8000**. Documentação interativa: **http://127.0.0.1:8000/docs**.
 
-- `DATABASE_URL` mantém o SQLite padrão ou aponta para PostgreSQL.
+- `DATABASE_URL` mantém o SQLite padrão ou aponta para PostgreSQL. URLs `postgres://` e `postgresql://` usam explicitamente o driver psycopg2 instalado.
 - Para reutilizar dados, indique o mesmo banco da aplicação anterior. Um caminho SQLite absoluto evita abrir outro banco ao executar de uma pasta diferente.
 - Usuários existentes mantêm suas senhas. Alterar `ADMIN_PASSWORD` não redefine uma conta existente.
 - `CAIXA_USERNAME` e `CAIXA_PASSWORD` permitem criar opcionalmente um operador.

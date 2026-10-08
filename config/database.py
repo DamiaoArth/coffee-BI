@@ -6,9 +6,18 @@ from sqlalchemy.orm import declarative_base, sessionmaker
 
 load_dotenv()
 
-DATABASE_URL = os.getenv(
-    "DATABASE_URL",
-    "sqlite:///./cafeteria.db",  # SQLite para desenvolvimento
+
+def normalize_database_url(url):
+    # SQLAlchemy 2.1 changed its default PostgreSQL driver; keep the installed
+    # psycopg2 driver explicit, including legacy hosting URLs using postgres://.
+    for prefix in ("postgres://", "postgresql://"):
+        if url.startswith(prefix):
+            return "postgresql+psycopg2://" + url[len(prefix) :]
+    return url
+
+
+DATABASE_URL = normalize_database_url(
+    os.getenv("DATABASE_URL", "sqlite:///./cafeteria.db")
 )
 
 engine = create_engine(
