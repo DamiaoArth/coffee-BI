@@ -120,3 +120,41 @@ Publique as regras com as permissões corretas:
     firebase deploy --only firestore:rules,firestore:indexes --project ID_EXATO_DO_PROJETO
 
 Antes de operar com clientes reais, ainda são necessários HTTPS, backups periódicos, revisões de IAM, limites de requisição distribuídos, monitoramento e estratégias de paginação/sumarização do dashboard para volume elevado. Esta implementação não inclui emissão fiscal, NF-e, TEF ou integração com adquirentes.
+
+
+## Auditoria de métodos HTTP e CRUD (frontend → FastAPI → Firestore)
+
+| Recurso | GET | POST | PUT | DELETE |
+|---|---|---|---|---|
+| Produtos | /api/products | /api/products | /api/products/{id} | /api/products/{id} (arquivar) |
+| Vendas | /api/sales | /api/sales | — | — |
+| Compras | /api/purchases | /api/purchases | — | — |
+| Financeiro | /api/transactions | /api/transactions | /api/transactions/{id} | /api/transactions/{id} |
+| Funcionários | /api/employees | /api/employees | /api/employees/{id} | /api/employees/{id} (inativar) |
+| Usuários | /api/users | /api/users | — | — |
+
+**Importante:** vendas e compras são lançamentos financeiros/estoque, por isso não existe
+DELETE direto e irreversível para elas. Excluir venda exigiria estornar o estoque e
+registrar o cancelamento em uma transação auditável. Usuários não têm endpoints de
+alteração/exclusão nesta versão; a administração de acessos exige implementação específica.
+
+Permissões: produtos e financeiro requerem papel admin/Gerente para gravação;
+funcionários/usuários exigem admin; vendas podem ser registradas por usuário
+autenticado; compras requerem admin/Gerente. As chamadas de escrita precisam de
+cookie válido e cabeçalho X-CSRF-Token, enviado automaticamente pela SPA.
+
+### Diagnóstico quando não sai POST no navegador
+
+1. Atualize para a branch da PR de correção e reinicie BI init.
+2. Abra DevTools (F12) → Network → Fetch/XHR, sem filtros por status.
+3. Clique em Produtos → Novo produto, preencha e salve.
+4. Deve aparecer POST /api/products (201), seguido de GET /api/products (200).
+5. Se não aparecer POST, o formulário agora mostra mensagem de validação visível.
+6. Se aparecer 401/403, confira login e autorização; se 422, confira os campos
+   destacados; se 5xx, verifique o terminal do FastAPI e o Firestore.
+7. Não confunda o projeto Firebase real com FIRESTORE_EMULATOR_HOST configurado.
+   O emulador usa outro banco, mesmo com interface semelhante.
+
+Todas as tabelas do frontend oferecem ordenação por coluna e paginação client-side
+sobre os dados efetivamente retornados pelos endpoints; para grandes catálogos e
+volumes acima dos limites de listagem da API, implementar paginação server-side.
