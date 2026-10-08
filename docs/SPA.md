@@ -1,80 +1,91 @@
-# Coffee BI — Nova interface (SPA + FastAPI)
+# Coffee BI 2 — SPA + Cloud Firestore
 
-Esta implementação foi adicionada **sem excluir o aplicativo Streamlit existente**, sobre a branch `codespace-vigilant-potato-69vpjr5w7v6c54vq`. A branch `main` não foi usada como base e não deve ser alterada por esta PR.
+A nova aplicação foi criada a partir da branch codespace-vigilant-potato-69vpjr5w7v6c54vq. A main não é usada nem alterada. Os arquivos do Streamlit foram preservados para comparação; a nova API usa Firestore para TODOS os dados operacionais.
 
-## Instalação local
+## 1. Preparar Firebase
 
-Python 3.11 ou superior:
+1. Crie ou selecione um projeto em https://console.firebase.google.com/.
+2. Habilite Cloud Firestore (modo de produção) em uma região adequada.
+3. Configure uma conta de serviço no servidor com acesso mínimo ao Firestore.
+4. Para Google Cloud Run, prefira credenciais padrão (ADC) sem JSON. Para servidor externo, configure GOOGLE_APPLICATION_CREDENTIALS com o caminho privado do JSON.
+5. Publique as regras em firestore.rules, que negam acesso direto pelo navegador. O Admin SDK ignora as regras de segurança do Firestore e usa IAM.
 
-```bash
-python -m venv .venv
-# Windows:
-.venv\Scripts\activate
-# Linux/macOS:
-# source .venv/bin/activate
-pip install -r requirements-api.txt
-# Windows: copy .env.example .env
-# Linux/macOS: cp .env.example .env
-python -c "import secrets; print(secrets.token_urlsafe(48))"
-```
+Esta implementação utiliza Firestore como banco, NÃO Firebase Authentication: a autenticação continua na API (hash bcrypt, cookie HttpOnly, CSRF e autorização por cargo).
 
-Copie o segredo aleatório gerado para `SESSION_SECRET` no arquivo `.env`.
-O arquivo `.env` real **não deve ser versionado**, por conter credenciais.
+## 2. Variáveis no arquivo .env
 
-Configure a primeira conta, com a senha de sua escolha (sem usuário padrão inseguro):
+Copie .env.example e defina:
+- FIREBASE_PROJECT_ID: ID do projeto Firebase
+- SESSION_SECRET: valor aleatório permanente (mais de 32 caracteres)
+- GOOGLE_APPLICATION_CREDENTIALS: caminho do JSON privado para uso fora do Google Cloud, se necessário
+- APP_ENV=production: habilita cookie Secure, exige SESSION_SECRET
+- PUBLIC_ORIGIN=https://seu-dominio.com: obrigatório quando servidor recebe requests atrás de proxy reverso
+- BUSINESS_TIMEZONE=America/Sao_Paulo: fuso operacional
 
-```bash
-python -m api.bootstrap_admin --username admin
-uvicorn api.main:app --host 127.0.0.1 --port 8000 --reload
-```
+Nunca publique o JSON da conta de serviço nem .env em PR/ZIP público.
 
-Abra http://127.0.0.1:8000. A documentação interativa da API fica em http://127.0.0.1:8000/api/docs.
+## 3. Instalação
 
-Se você já possui um banco SQLite, faça backup e reutilize o arquivo `data/cafeteria.db`, que é a localização da branch de origem. Em PostgreSQL, mantenha `DATABASE_URL` apontando ao mesmo banco. **Não execute `init_db.py` antigo em produção**: ele cria dados e credenciais de demonstração.
+Python 3.11+:
 
-## Escopo implementado
+    python -m venv .venv
+    # Linux/macOS: source .venv/bin/activate
+    # Windows PowerShell: .venv\Scripts\Activate.ps1
+    python -m pip install -r requirements-api.txt
+    # Copie .env.example para .env e configure o Firebase.
+    python -m api.bootstrap_admin --username admin
+    uvicorn api.main:app --reload --port 8000
 
-- Login redesenhado, com sessão assinada em cookie HttpOnly, proteção CSRF em operações de escrita, controle de acesso no backend e criação explícita do administrador.
-- Navbar horizontal responsiva e navegação SPA via History API, sem recarga total.
-- Cache em memória por recurso, deduplicação de chamadas, prefetch ao interagir com a navegação e invalidação após alterações.
-- Skeletons desenhados para indicadores, gráficos, filtros, catálogo, vendas, compras, financeiro e equipe.
-- Dashboard e BI ligados aos dados reais; gráficos de faturamento, vendas por pagamento, alertas de estoque e ranking de produtos.
-- Produtos: listagem, cadastro, edição e arquivamento lógico.
-- Vendas: registro de pedidos e baixa de estoque em uma só transação, com rejeição por estoque insuficiente.
-- Compras: lançamento de fornecedores, entrada de estoque e cálculo de custo médio ponderado.
-- Financeiro: lançamentos avulsos, extrato e indicadores.
-- Equipe: funcionários e criação de acesso com papéis `admin`, `Gerente`, `funcionario`.
-- Banco SQLAlchemy original preservado; o Streamlit antigo continua disponível.
+Acesse http://127.0.0.1:8000 e veja a documentação da API em /api/docs.
+A criação da primeira conta exige senha com pelo menos 10 caracteres no terminal. Não existe senha padrão.
 
-## Qualidade
+### Ambiente local de testes sem credenciais
 
-```bash
-pip install -r requirements-dev.txt
-pytest -q tests/test_api_spa.py
-node --check web/app.js
-```
+Inicie o emulador em um terminal:
 
-O frontend utiliza JavaScript nativo, HTML e CSS sem instalar um segundo runtime para o cliente. O Uvicorn atende tanto os arquivos estáticos quanto `/api/*` na mesma origem, simplificando cookies e CSRF.
+    npx --yes firebase-tools emulators:start --only firestore --project demo-coffee-bi
 
-## Estrutura
+Em outro terminal, defina FIREBASE_PROJECT_ID=demo-coffee-bi, FIRESTORE_EMULATOR_HOST=127.0.0.1:8080 e inicie a API. Em PowerShell, use $env:FIREBASE_PROJECT_ID="demo-coffee-bi" e $env:FIRESTORE_EMULATOR_HOST="127.0.0.1:8080".
 
-```text
-api/main.py                 FastAPI: segurança, endpoints, dashboards
-api/bootstrap_admin.py      provisionamento seguro inicial
-web/index.html              ponto de entrada
-web/app.js                  navegação, componentes e estado do cliente
-web/styles.css              design system, responsividade e skeletons
-tests/test_api_spa.py       testes funcionais da API
-requirements-api.txt        dependências do servidor
-requirements-dev.txt        ferramentas de teste
-Dockerfile.api              imagem do serviço (configurar HTTPS)
-.env.example                modelo de variáveis sem segredos
-```
+O emulador é descartável. Nunca use o projeto demo no ambiente de produção.
 
-## Produção — cuidados obrigatórios
+## 4. Migração dos dados SQL/SQLite existentes
 
-Configure `APP_ENV=production`, `SESSION_SECRET` permanente (32+ caracteres), `PUBLIC_ORIGIN` e HTTPS em proxy reverso. Faça backup automático do banco e migrações com Alembic antes de mudanças futuras. Use armazenamento persistente: SQLite em disco efêmero de hospedagem perde dados. O limitador de login atual é em memória por processo; para múltiplos workers, use armazenamento compartilhado (ex.: Redis). Atualize senhas legadas fracas criadas pela versão de demonstração.
+api/migrate_sql_to_firestore.py lê todos os produtos, vendas e seus itens, compras e seus itens, transações, funcionários e usuários, preservando senhas como hashes bcrypt e mantendo IDs originais.
 
-**Limitações:** o projeto modernizado é um ERP funcional para os módulos descritos, não substitui sistemas homologados de NFC-e, TEF, NF-e, contabilidade ou gestão fiscal. Nenhuma integração fiscal ou de adquirente é simulada como se existisse. Persistência e autenticação devem ser testadas no seu ambiente antes do uso com dados reais.
+1. Interrompa as escritas da aplicação antiga e faça um backup verificável do banco SQL original.
+2. Configure MIGRATION_SOURCE_DATABASE_URL com o endereço SQLAlchemy da origem (por exemplo: sqlite:///./data/cafeteria.db).
+3. Configure FIREBASE_PROJECT_ID e credenciais para o destino.
+4. Faça inventário em modo seguro (somente leitura):
 
-Para comparar sem perder código: rode `streamlit run app.py` para a interface antiga e `uvicorn api.main:app` para a nova.
+    python -m api.migrate_sql_to_firestore
+
+5. Verifique contagens e execute, somente após confirmar o projeto vazio:
+
+    python -m api.migrate_sql_to_firestore --apply --confirm-project-id ID_EXATO_DO_PROJETO
+
+6. Verifique os totais financeiros, contagem e estoque, usuários e permissões antes de mudar a aplicação.
+
+O script não remove nem altera registros do banco SQL. Para segurança, recusa destinos não vazios. Importações grandes são feitas em lotes: se um lote falhar, a migração total não é atômica; faça reconciliação manual antes de repetir.
+
+## 5. Estrutura Firestore
+
+Coleções: users, usernames, employees, products, sales, purchases, transactions, _counters.
+
+IDs numéricos do frontend anterior continuam preservados como IDs de documento. Valores monetários são armazenados como centavos inteiros e convertidos em reais pela API. Vendas, baixa de estoque e incremento de contador são uma transação Firestore; o mesmo vale para compras e cálculo do custo médio ponderado. O Firestore usa concorrência/retry quando um documento da transação sofre alterações. Ver https://firebase.google.com/docs/firestore/manage-data/transactions.
+
+A API continua sendo a única forma de acesso aos dados para o site. O Admin SDK é privilegiado e a identidade do servidor deve ser protegida por IAM.
+
+## 6. Testar
+
+    python -m pip install -r requirements-dev.txt
+    node --check web/app.js
+    npx --yes firebase-tools emulators:exec --only firestore --project demo-coffee-bi -- "python -m pytest -q tests/test_api_spa.py"
+
+O GitHub Actions também executa os testes com o emulador. Nunca execute a limpeza dos fixtures contra um projeto Firebase real.
+
+Publique as regras com as permissões corretas:
+
+    firebase deploy --only firestore:rules,firestore:indexes --project ID_EXATO_DO_PROJETO
+
+Antes de operar com clientes reais, ainda são necessários HTTPS, backups periódicos, revisões de IAM, limites de requisição distribuídos, monitoramento e estratégias de paginação/sumarização do dashboard para volume elevado. Esta implementação não inclui emissão fiscal, NF-e, TEF ou integração com adquirentes.
