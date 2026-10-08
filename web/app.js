@@ -118,7 +118,8 @@ async function request(path, options={}) {
     }
     let detail = result.detail;
     if (Array.isArray(detail)) detail = detail.map(x => x.msg).join(', ');
-    throw new Error(typeof detail==='string'?detail:'Não foi possível concluir a operação.');
+    const message=typeof detail==='string'?detail:'Não foi possível concluir a operação.';
+    throw new Error('HTTP '+response.status+' · '+message);
   }
   return result;
 }
@@ -340,9 +341,8 @@ function dataTable(key,columns,rows,rowMarkup) {
   }).join('');
   return '<div class="data-grid">'+view+'<footer class="table-footer">'+
     '<span class="table-count">Exibindo <strong>'+(total?start+1:0)+'–'+end+'</strong> de <strong>'+total+'</strong> registros</span>'+
-    '<div class="table-tools"><label for="size-'+key+'">Linhas por página</label><select class="rows-size" id="size-'+key+
-      '" data-table="'+key+'" aria-label="Itens por página">'+PAGE_SIZES.map(size=>
-      '<option value="'+size+'" '+(size===pref.size?'selected':'')+'>'+size+'</option>').join('')+'</select>'+
+    '<div class="table-tools"><span class="table-size-label">Linhas por página</span>'+
+    smartSelect('size-'+key,'Linhas por página',PAGE_SIZES.map(size=>({value:String(size),label:size+' linhas'})),String(pref.size),'_table_size_'+key)+
     '<nav class="table-pagination" aria-label="Paginação de '+key+'"><button type="button" class="page-btn" data-action="table-page" data-table="'+key+'" data-page="'+(pref.page-1)+'" '+(pref.page===1?'disabled':'')+' aria-label="Página anterior">‹</button>'+
     pagesButtons+'<button type="button" class="page-btn" data-action="table-page" data-table="'+key+'" data-page="'+(pref.page+1)+'" '+(pref.page===pages?'disabled':'')+' aria-label="Próxima página">›</button></nav></div></footer></div>';
 }
@@ -598,7 +598,7 @@ function parseMoney(value) {
   if(text.includes(',')&&text.includes('.'))text=text.replace(/\./g,'').replace(',','.');
   else text=text.replace(',','.');
   const parsed=Number(text);
-  if(!text||!Number.isFinite(parsed)||parsed<0||Math.round(parsed*100)!==parsed*100)
+  if(!text||!Number.isFinite(parsed)||parsed<0||Math.abs(Math.round(parsed*100)-parsed*100)>1e-7)
     throw new Error('Informe um valor monetário válido com até 2 casas decimais.');
   return parsed;
 }
@@ -768,7 +768,7 @@ document.addEventListener('click',async e=>{
       const id=Number(document.querySelector('#smart-item-product input[type=hidden]')?.value);
       const quantity=Number(document.querySelector('#fld-item-qty')?.value);
       const p=(await dataFor('products')).find(x=>x.id===id);
-      const price=state.cartMode==='purchase'?Number(document.querySelector('#fld-item-price')?.value):p?.preco_venda;
+      const price=state.cartMode==='purchase'?parseMoney(document.querySelector('#fld-item-price')?.value):p?.preco_venda;
       if(!p||!Number.isInteger(quantity)||quantity<1||!Number.isFinite(price)||price<0)throw new Error('Confira o produto, quantidade e preço.');
       state.cart.push({id_produto:id,quantidade,preco_unitario:price});updateCart();return;
     }
