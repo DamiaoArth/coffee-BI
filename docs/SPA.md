@@ -1,5 +1,36 @@
 # Coffee BI 2 — SPA + Cloud Firestore
 
+## Comando de inicialização unificado
+
+A nova aplicação também oferece o CLI instalável BI (maiúsculas). Para instalar
+uma vez na sua máquina, a partir da raiz do repositório:
+
+    python -m pip install -e .
+
+Depois, com o mesmo ambiente Python ativo, inicie o sistema inteiro usando:
+
+    BI init
+
+Esse comando cria o .env se necessário, gera o SESSION_SECRET (quando estiver
+vazio e APP_ENV=development), pede o ID do projeto Firebase, verifica o
+Firestore e oferece cadastro da conta admin quando o banco estiver vazio.
+Inicializa o FastAPI com todo o frontend na mesma porta, sem iniciar Streamlit.
+
+Opções:
+
+    BI init --emulator          # emulador Firestore isolado + site + API
+    BI init --reload            # reinício automático ao editar código
+    BI init --no-browser        # sem abrir navegador
+    BI init --port 8081         # altera porta HTTP
+
+Para o Cloud Firestore na nuvem, configure credenciais de servidor via ADC
+ou variável GOOGLE_APPLICATION_CREDENTIALS (JSON privado). O comando não cria
+automaticamente projeto Firebase, não publica regras e não descobre chaves privadas.
+Para o modo emulador, instale Node.js, Java e Firebase CLI. O emulador é
+bloqueado no modo APP_ENV=production. O comando não inventa senhas.
+
+---
+
 A nova aplicação foi criada a partir da branch codespace-vigilant-potato-69vpjr5w7v6c54vq. A main não é usada nem alterada. Os arquivos do Streamlit foram preservados para comparação; a nova API usa Firestore para TODOS os dados operacionais.
 
 ## 1. Preparar Firebase
