@@ -46,3 +46,19 @@ def test_frontend_no_longer_uses_character_glyphs_as_icons():
     assert "const ICONS =" in source
     assert "class=\"btn btn-primary\"" in source
     assert "class=\"nav-track\"" in source
+
+
+def test_dashboard_charts_are_interactive_and_accessible():
+    source = open("web/app.js", encoding="utf-8").read()
+    css = open("web/styles.css", encoding="utf-8").read()
+    for token in (
+        "chart-metric", "chart-compare", "chart-point",
+        "payment-select", "rank-select", "viz-tooltip",
+        "serie_anterior", "aria-pressed"
+    ):
+        assert token in source
+    for token in (
+        ".chart-segmented", ".chart-line-compare", ".donut-layout",
+        ".rank-bar-row", ".viz-tooltip", ".period-switch"
+    ):
+        assert token in css
