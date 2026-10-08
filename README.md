@@ -1,18 +1,70 @@
-# Coffee BI — versão moderna (FastAPI + Firebase)
+# Coffee BI — ERP para cafeterias
 
-**A nova aplicação web já não usa SQLite/PostgreSQL para operar.** O banco é **Cloud Firestore (Firebase)**, com acesso exclusivo pelo backend FastAPI.
+Aplicação moderna com **FastAPI + Firebase Cloud Firestore + frontend SPA**. Os arquivos Streamlit foram mantidos como código legado.
 
-Guia para configurar Firebase, executar, usar emulador e migrar dados SQL existentes: [docs/SPA.md](docs/SPA.md).
+## Inicie toda a aplicação com BI init
 
-    python -m pip install -r requirements-api.txt
-    # Configure FIREBASE_PROJECT_ID, credenciais do Firebase e SESSION_SECRET no .env
-    python -m api.bootstrap_admin --username admin
-    uvicorn api.main:app --reload --port 8000
+**Instalação única** no diretório do projeto (Python 3.11+).
 
-A aplicação web fica em http://localhost:8000; a API em /api/docs.
-A branch original com Streamlit e seu banco SQL permanece abaixo, apenas como versão legada.
+**Windows / PowerShell:**
+
+    py -m venv .venv
+    .\.venv\Scripts\Activate.ps1
+    python -m pip install -e .
+    BI init
+
+**Linux / macOS:**
+
+    python3 -m venv .venv
+    source .venv/bin/activate
+    python -m pip install -e .
+    BI init
+
+Depois da instalação única, basta ativar o mesmo ambiente virtual e executar **BI init**.
+
+O comando faz o seguinte:
+- Cria o .env local a partir de .env.example, se ainda não existir.
+- Gera e grava um SESSION_SECRET aleatório e estável sem mostrá-lo no terminal.
+- Solicita o ID do Firebase se estiver ausente (em terminal interativo).
+- Verifica a conexão com o Cloud Firestore configurado.
+- Permite cadastrar o primeiro administrador, se o banco estiver vazio.
+- Inicializa FastAPI/Uvicorn e frontend no mesmo servidor.
+- Abre http://127.0.0.1:8000 no navegador, quando possível.
+- Encerra os processos iniciados ao pressionar Ctrl+C.
+
+**O Cloud Firestore real está hospedado no Firebase e não é iniciado localmente.**
+BI init exige credenciais configuradas por ADC (Google Cloud) ou GOOGLE_APPLICATION_CREDENTIALS,
+apontando a um JSON de conta de serviço guardado fora do repositório.
+
+### Sem Firebase real: modo emulador
+
+Com Node.js, Java e Firebase CLI disponíveis, use:
+
+    BI init --emulator
+
+O comando inicia o emulador Firestore local e o aplicativo. Ele usa o projeto
+isolado demo-coffee-bi e nunca deve acessar a base de produção.
+
+### Opções de desenvolvimento
+
+    BI init --reload                 # atualiza o backend ao salvar arquivos
+    BI init --port 8081              # porta da aplicação
+    BI init --no-browser             # não abre a janela do navegador
+    BI init --emulator --reload      # emulador e recarregamento automático
+    BI init --help                   # opções disponíveis
+
+Após a instalação, cada terminal precisa do ambiente virtual ativado para
+resolver o executável BI. Se o PowerShell restringir a ativação, use
+.venv\Scripts\activate.bat pelo CMD.
+
+Consulte [docs/SPA.md](docs/SPA.md) para configuração Firebase, migração SQL e produção.
 
 ---
+
+## Código legado: Streamlit (somente para referência)
+
+**Não utilize senhas de demonstração da versão legada em produção.**
+A nova aplicação não gera contas com senhas padrão.
 
 # ERP Cafeteria
 
