@@ -44,6 +44,10 @@ function harness() {
       if(!success)return {ok:false,status:403,json:async()=>({detail:'Sem permissão'})};
       if(path==='/api/products'&&options.method==='POST')
         return {ok:true,status:201,json:async()=>created};
+      if(path==='/api/products/51'&&options.method==='PUT')
+        return {ok:true,status:200,json:async()=>({...created,...JSON.parse(options.body)})};
+      if(path==='/api/products/51'&&options.method==='DELETE')
+        return {ok:true,status:200,json:async()=>({ok:true})};
       if(path==='/api/products'&&options.method==='GET')
         return {ok:true,status:200,json:async()=>[created]};
       throw Error('Unexpected HTTP call '+options.method+' '+path);
@@ -125,4 +129,29 @@ test('os métodos dos formulários e ações existem com caminhos REST corretos'
     "function smartSelect",
     "function openDropdown",
   ])assert.ok(source.includes(token),token);
+});
+
+
+test('editar e arquivar: PUT e DELETE realmente saem do cliente HTTP',async()=>{
+  const h=harness();
+  const f=form({
+    id:'51',nome:'Cold Brew Premium',categoria:'Cafés',preco_venda:'20,00',
+    custo_unitario:'5,00',estoque_atual:'15',estoque_minimo:'4',unidade:'un',
+  });
+  await h.handlers.submit({target:f,preventDefault(){}});
+  assert.deepEqual(h.calls.map(x=>[x.method,x.path]),[
+    ['PUT','/api/products/51'],['GET','/api/products']
+  ]);
+  h.calls.length=0;
+  const btn={
+    dataset:{action:'archive-product',id:'51'},
+    closest(){return null;},
+  };
+  const target={
+    classList:{contains:()=>false},
+    closest(selector){return selector==='[data-action]'?btn:null;},
+  };
+  await h.handlers.click({target,preventDefault(){}});
+  assert.equal(h.calls[0].method,'DELETE');
+  assert.equal(h.calls[0].path,'/api/products/51');
 });
