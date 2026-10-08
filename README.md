@@ -59,6 +59,30 @@ resolver o executável BI. Se o PowerShell restringir a ativação, use
 
 Consulte [docs/SPA.md](docs/SPA.md) para configuração Firebase, migração SQL e produção.
 
+
+### Popular o Firestore com dados de demonstração
+
+O seed cria produtos, equipe, compras, vendas e lançamentos financeiros coerentes para visualizar o dashboard.
+Ele **não cria usuários ou senhas** e marca todos os documentos gerados com \`seed_tag=coffee-bi-demo-v1\`.
+
+Cloud Firestore real:
+
+    python -m api.seed_firestore --apply --confirm-project-id business-inteli
+
+Para substituir somente dados gerados anteriormente pelo seed:
+
+    python -m api.seed_firestore --reset-demo-data --apply --confirm-project-id business-inteli
+
+No Firebase Emulator, basta manter \`FIRESTORE_EMULATOR_HOST\` configurado e executar:
+
+    python -m api.seed_firestore
+
+O reset do seed nunca apaga usuários e não remove documentos que não possuam a tag do próprio seed.
+
+### Interface 2026
+
+A SPA usa um design system único para navegação, botões, tabelas, modais e cards. Os ícones são SVG inline padronizados, sem emojis/glifos improvisados e sem dependências externas. Navbar, KPIs e gráficos foram redesenhados para manter proporções e hierarquia consistentes em desktop e mobile.
+
 ---
 
 ## Código legado: Streamlit (somente para referência)
