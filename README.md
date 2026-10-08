@@ -1,3 +1,104 @@
+# Coffee BI — ERP para cafeterias
+
+Aplicação moderna com **FastAPI + Firebase Cloud Firestore + frontend SPA**. Os arquivos Streamlit foram mantidos como código legado.
+
+## Inicie toda a aplicação com BI init
+
+**Instalação única** no diretório do projeto (Python 3.11+).
+
+**Windows / PowerShell:**
+
+    py -m venv .venv
+    .\.venv\Scripts\Activate.ps1
+    python -m pip install -e .
+    BI init
+
+**Linux / macOS:**
+
+    python3 -m venv .venv
+    source .venv/bin/activate
+    python -m pip install -e .
+    BI init
+
+Depois da instalação única, basta ativar o mesmo ambiente virtual e executar **BI init**.
+
+O comando faz o seguinte:
+- Cria o .env local a partir de .env.example, se ainda não existir.
+- Gera e grava um SESSION_SECRET aleatório e estável sem mostrá-lo no terminal.
+- Solicita o ID do Firebase se estiver ausente (em terminal interativo).
+- Verifica a conexão com o Cloud Firestore configurado.
+- Permite cadastrar o primeiro administrador, se o banco estiver vazio.
+- Inicializa FastAPI/Uvicorn e frontend no mesmo servidor.
+- Abre http://127.0.0.1:8000 no navegador, quando possível.
+- Encerra os processos iniciados ao pressionar Ctrl+C.
+
+**O Cloud Firestore real está hospedado no Firebase e não é iniciado localmente.**
+BI init exige credenciais configuradas por ADC (Google Cloud) ou GOOGLE_APPLICATION_CREDENTIALS,
+apontando a um JSON de conta de serviço guardado fora do repositório.
+
+### Sem Firebase real: modo emulador
+
+Com Node.js, Java e Firebase CLI disponíveis, use:
+
+    BI init --emulator
+
+O comando inicia o emulador Firestore local e o aplicativo. Ele usa o projeto
+isolado demo-coffee-bi e nunca deve acessar a base de produção.
+
+### Opções de desenvolvimento
+
+    BI init --reload                 # atualiza o backend ao salvar arquivos
+    BI init --port 8081              # porta da aplicação
+    BI init --no-browser             # não abre a janela do navegador
+    BI init --emulator --reload      # emulador e recarregamento automático
+    BI init --help                   # opções disponíveis
+
+Após a instalação, cada terminal precisa do ambiente virtual ativado para
+resolver o executável BI. Se o PowerShell restringir a ativação, use
+.venv\Scripts\activate.bat pelo CMD.
+
+Consulte [docs/SPA.md](docs/SPA.md) para configuração Firebase, migração SQL e produção.
+
+
+### Popular o Firestore com dados de demonstração
+
+O seed cria produtos, equipe, compras, vendas e lançamentos financeiros coerentes para visualizar o dashboard.
+Ele **não cria usuários ou senhas** e marca todos os documentos gerados com \`seed_tag=coffee-bi-demo-v1\`.
+
+Cloud Firestore real (recomendado):
+
+    BI seed
+
+O comando lê o .env, mostra o projeto configurado e pede que você digite exatamente
+o ID do projeto antes de gravar. Para automação sem prompt:
+
+    BI seed --yes
+
+Para substituir somente dados gerados anteriormente pelo seed:
+
+    BI seed --reset-demo-data
+
+O comando Python direto também continua disponível:
+
+    python -m api.seed_firestore --apply --confirm-project-id business-inteli
+
+No Firebase Emulator, basta manter \`FIRESTORE_EMULATOR_HOST\` configurado e executar:
+
+    python -m api.seed_firestore
+
+O reset do seed nunca apaga usuários e não remove documentos que não possuam a tag do próprio seed.
+
+### Interface 2026
+
+A SPA usa um design system único para navegação, botões, tabelas, modais e cards. Os ícones são SVG inline padronizados, sem emojis/glifos improvisados e sem dependências externas. Navbar, KPIs e gráficos foram redesenhados para manter proporções e hierarquia consistentes em desktop e mobile.
+
+---
+
+## Código legado: Streamlit (somente para referência)
+
+**Não utilize senhas de demonstração da versão legada em produção.**
+A nova aplicação não gera contas com senhas padrão.
+
 # ERP Cafeteria
 
 Sistema de gestão e BI para cafeteria: vendas, produtos/estoque, compras,

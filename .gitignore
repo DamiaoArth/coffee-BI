@@ -1,3 +1,24 @@
 .venv
 
 */__pycache__
+
+# Segredos locais e estado de execução do novo backend
+.env
+.env.*
+!.env.example
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+data/*.db
+data/*.db-*
+*.sqlite3
+
+# Credenciais privadas Firebase - nunca versionar
+./credentials
+./credentials/.
+*service-account*.json
+./*service-account*.json
+*serviceAccount*.json
+firebase-adminsdk-*.json
+firebase-credentials*.json

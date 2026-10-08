@@ -1,0 +1,20 @@
+Metadata-Version: 2.4
+Name: coffee-bi
+Version: 2.1.0
+Summary: Coffee BI: ERP para cafeterias, FastAPI e Firebase Cloud Firestore
+Requires-Python: >=3.11
+Requires-Dist: fastapi<1,>=0.115
+Requires-Dist: uvicorn[standard]<1,>=0.30
+Requires-Dist: pydantic<3,>=2.6
+Requires-Dist: firebase-admin<8,>=6.6
+Requires-Dist: google-cloud-firestore<3,>=2.20
+Requires-Dist: python-dotenv<2,>=1
+Requires-Dist: bcrypt<5,>=4.1
+Requires-Dist: itsdangerous<3,>=2.2
+Requires-Dist: tzdata>=2025.2
+Provides-Extra: legacy
+Requires-Dist: sqlalchemy<3,>=2.0.25; extra == "legacy"
+Requires-Dist: psycopg2-binary<3,>=2.9.9; extra == "legacy"
+Provides-Extra: dev
+Requires-Dist: pytest<10,>=8; extra == "dev"
+Requires-Dist: httpx<1,>=0.27; extra == "dev"

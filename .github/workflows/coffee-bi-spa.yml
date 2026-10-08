@@ -1,0 +1,55 @@
+name: Coffee BI SPA - Firestore
+on:
+  pull_request:
+    paths:
+      - 'api/**'
+      - 'web/**'
+      - 'tests/test_api_spa.py'
+      - 'tests/test_cli.py'
+      - 'tests/test_seed_ui.py'
+      - 'pyproject.toml'
+      - 'firebase.json'
+      - 'firestore.rules'
+      - 'firestore.indexes.json'
+      - 'requirements-api.txt'
+      - 'requirements-dev.txt'
+      - '.github/workflows/coffee-bi-spa.yml'
+  push:
+    branches: ['feat/coffee-bi-spa-redesign', 'feat/ui-redesign-firestore-seed']
+
+jobs:
+  api-and-ui:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      FIREBASE_PROJECT_ID: demo-coffee-bi
+      FIRESTORE_EMULATOR_HOST: 127.0.0.1:8080
+      APP_ENV: development
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Instalar dependências da API e testes
+        run: python -m pip install -e '.[dev]'
+      - name: Verificar comando BI init
+        run: |
+          BI --help
+          BI init --help
+      - name: Testar CLI sem Firebase real
+        run: python -m pytest -q tests/test_cli.py
+      - name: Testar seed e contrato visual
+        run: python -m pytest -q tests/test_seed_ui.py
+      - name: Verificar sintaxe JavaScript
+        run: node --check web/app.js
+      - name: Verificar módulos Python
+        run: python -m compileall -q api
+      - name: Rodar testes em Firestore Emulator (sem credenciais reais)
+        run: npx --yes firebase-tools@latest emulators:exec --only firestore --project demo-coffee-bi -- "python -m pytest -q tests/test_api_spa.py"

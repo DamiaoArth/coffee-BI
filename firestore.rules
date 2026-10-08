@@ -1,0 +1,10 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // O browser acessa apenas a API FastAPI. O Admin SDK usa IAM e
+    // não está sujeito a estas regras, então não permita acesso direto.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
