@@ -62,3 +62,12 @@ def test_dashboard_charts_are_interactive_and_accessible():
         ".rank-bar-row", ".viz-tooltip", ".period-switch"
     ):
         assert token in css
+
+
+def test_product_save_refreshes_catalog_from_server():
+    source = open("web/app.js", encoding="utf-8").read()
+    assert "async function saveProduct" in source
+    assert "const fresh=await request(\'/products\')" in source
+    assert "state.cache.set(\'products\'" in source
+    assert "state.search=\'\'" in source
+    assert "await saveProduct(values,id)" in source
