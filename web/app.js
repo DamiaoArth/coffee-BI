@@ -10,7 +10,8 @@ const state = { user:null, csrf:'', path:location.pathname, cache:new Map(),
   inflight:new Map(), modal:null, cart:[], cartMode:'sale', error:null,
   search:'', days:30, loginBusy:false, showPassword:false,
   chartMetric:'revenue', chartCompare:false, chartPoint:null,
-  paymentSelection:null, productSelection:null };
+  paymentSelection:null, productSelection:null,
+  tablePrefs:{}, dropdown:null, saving:false };
 const ICONS = {
   dashboard:'<rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/>',
   intelligence:'<path d="M4 19V9"/><path d="M10 19V5"/><path d="M16 19v-7"/><path d="M22 19H2"/>',
@@ -52,6 +53,14 @@ const manager = () => !!state.user && ['admin','Gerente'].includes(state.user.ro
 const admin = () => !!state.user && state.user.role === 'admin';
 const available = () => pages.filter(([key]) => key!=='team' || admin()).filter(([key]) =>
     !['bi','purchases','finance','products'].includes(key) || key==='products' || manager());
+const PAGE_SIZES=[10,25,50,100];
+const tablePrefs=key => state.tablePrefs[key] ||= {page:1,size:10,sort:'',direction:1};
+const cmpValue=(a,b)=> typeof a==='number'&&typeof b==='number'?a-b:
+  String(a??'').localeCompare(String(b??''),'pt-BR',{numeric:true,sensitivity:'base'});
+const orderRows=(rows,key,columns)=>{
+  const pref=tablePrefs(key), col=columns.find(column=>column.key===pref.sort);
+  return col?[...rows].sort((a,b)=>cmpValue(col.value(a),col.value(b))*pref.direction):rows;
+};
 const esc = value => String(value ?? '').replace(/[&<>"']/g, char =>
     ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
 const money = value => new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL'}).format(Number(value)||0);
@@ -306,9 +315,36 @@ function donutChart(items) {
     '<div class="viz-tooltip" role="status" aria-live="polite"></div></div><div class="donut-legend">'+legend+'</div></div>';
 }
 
-function table(headers,items) {
-  return '<div class="table-wrap"><table><thead><tr>'+headers.map(h=>'<th>'+esc(h)+'</th>').join('')+
-    '</tr></thead><tbody>'+items.join('')+'</tbody></table></div>';
+function dataTable(key,columns,rows,rowMarkup) {
+  const pref=tablePrefs(key);
+  const ordered=orderRows(rows,key,columns);
+  const total=ordered.length, pages=Math.max(1,Math.ceil(total/pref.size));
+  pref.page=Math.min(Math.max(1,pref.page),pages);
+  const start=(pref.page-1)*pref.size, end=Math.min(start+pref.size,total);
+  const items=ordered.slice(start,end);
+  const headers=columns.map(col=>'<th scope="col">'+(col.sortable===false?
+    '<span>'+esc(col.label)+'</span>':
+    '<button type="button" class="th-sort '+(pref.sort===col.key?'sorted':'')+
+      '" data-action="table-sort" data-table="'+key+'" data-sort="'+col.key+
+      '" aria-label="Ordenar por '+esc(col.label)+'" aria-sort="'+
+      (pref.sort===col.key?(pref.direction===1?'ascending':'descending'):'none')+'">'+esc(col.label)+
+      '<span aria-hidden="true">'+(pref.sort===col.key?(pref.direction===1?'↑':'↓'):'↕')+'</span></button>')+'</th>').join('');
+  const view='<div class="table-wrap"><table><thead><tr>'+headers+'</tr></thead><tbody>'+
+    items.map((item,index)=>rowMarkup(item,start+index)).join('')+'</tbody></table></div>';
+  const pagesButtons=Array.from({length:Math.min(5,pages)},(_,index)=>{
+    const first=Math.max(1,Math.min(pref.page-2,pages-4));
+    const page=first+index;
+    return '<button type="button" class="page-btn '+(pref.page===page?'active':'')+
+      '" data-action="table-page" data-table="'+key+'" data-page="'+page+
+      '" aria-label="Página '+page+'" aria-current="'+(pref.page===page?'page':'false')+'">'+page+'</button>';
+  }).join('');
+  return '<div class="data-grid">'+view+'<footer class="table-footer">'+
+    '<span class="table-count">Exibindo <strong>'+(total?start+1:0)+'–'+end+'</strong> de <strong>'+total+'</strong> registros</span>'+
+    '<div class="table-tools"><label for="size-'+key+'">Linhas por página</label><select class="rows-size" id="size-'+key+
+      '" data-table="'+key+'" aria-label="Itens por página">'+PAGE_SIZES.map(size=>
+      '<option value="'+size+'" '+(size===pref.size?'selected':'')+'>'+size+'</option>').join('')+'</select>'+
+    '<nav class="table-pagination" aria-label="Paginação de '+key+'"><button type="button" class="page-btn" data-action="table-page" data-table="'+key+'" data-page="'+(pref.page-1)+'" '+(pref.page===1?'disabled':'')+' aria-label="Página anterior">‹</button>'+
+    pagesButtons+'<button type="button" class="page-btn" data-action="table-page" data-table="'+key+'" data-page="'+(pref.page+1)+'" '+(pref.page===pages?'disabled':'')+' aria-label="Próxima página">›</button></nav></div></footer></div>';
 }
 function dashboardView(d,bi=false) {
   const actions=periodSelect();
@@ -333,62 +369,90 @@ function dashboardView(d,bi=false) {
   return header+stats+biStats+'<div class="grid-main">'+trends+top+'</div><div class="grid-two">'+methods+low+'</div>';
 }
 function productsView(data) {
-  const rows=data.filter(p=>[p.nome,p.categoria].some(x=>x?.toLowerCase().includes(state.search.toLowerCase())))
-    .map(p=>'<tr><td><strong>'+esc(p.nome)+'</strong></td><td>'+esc(p.categoria)+'</td><td>'+money(p.preco_venda)+'</td>'+
-      '<td>'+esc(p.estoque_atual)+' '+esc(p.unidade)+'</td><td>'+tag(p.estoque_atual<=p.estoque_minimo?'Baixo':'Disponível',p.estoque_atual<=p.estoque_minimo?'warn':'')+'</td>'+
-      '<td>'+(manager()?'<button class="btn btn-secondary btn-sm" data-action="edit-product" data-id="'+p.id+'">'+icon('edit',15)+'<span>Editar</span></button>':'—')+'</td></tr>');
+  const filtered=data.filter(p=>[p.nome,p.categoria].some(x=>x?.toLowerCase().includes(state.search.toLowerCase())));
+  const cols=[
+    {key:'id',label:'ID',value:p=>p.id},
+    {key:'nome',label:'Produto',value:p=>p.nome},
+    {key:'categoria',label:'Categoria',value:p=>p.categoria},
+    {key:'preco',label:'Preço',value:p=>p.preco_venda},
+    {key:'estoque',label:'Em estoque',value:p=>p.estoque_atual},
+    {key:'situacao',label:'Situação',value:p=>p.estoque_atual<=p.estoque_minimo?'Baixo':'Disponível'},
+    {key:'actions',label:'Ações',sortable:false}
+  ];
+  const row=p=>'<tr><td class="cell-id">#'+p.id+'</td><td><div class="product-cell"><span class="product-avatar">'+icon('coffee',16)+'</span><strong>'+esc(p.nome)+'</strong></div></td>'+
+    '<td>'+esc(p.categoria)+'</td><td class="cell-num">'+money(p.preco_venda)+'</td>'+
+    '<td class="cell-num">'+esc(p.estoque_atual)+' <small>'+esc(p.unidade)+'</small></td>'+
+    '<td>'+tag(p.estoque_atual<=p.estoque_minimo?'Baixo':'Disponível',p.estoque_atual<=p.estoque_minimo?'warn':'')+'</td>'+
+    '<td><div class="row-actions">'+(manager()?'<button class="btn btn-secondary btn-sm" data-action="edit-product" data-id="'+p.id+'">'+icon('edit',15)+'<span>Editar</span></button>'+
+     '<button class="btn btn-danger btn-sm btn-icon" data-action="archive-product" data-id="'+p.id+'" aria-label="Arquivar '+esc(p.nome)+'" title="Arquivar produto">'+icon('trash',15)+'</button>':'—')+'</div></td></tr>';
+  const active=dataTable('products',cols,filtered,row);
   return pageHead('CATÁLOGO','Produtos & estoque','Gerencie preços, categorias e quantidades com atualização imediata.',
     manager()?'<button class="btn btn-primary" data-action="new-product">'+icon('plus',16)+'<span>Novo produto</span></button>':'')+
     panel('Seu catálogo',data.length+' produtos ativos',
-     '<div class="toolbar"><label class="search-box" for="search">'+icon('search',17)+'<input id="search" placeholder="Buscar produto ou categoria..." aria-label="Buscar produtos" value="'+esc(state.search)+'"></label></div>'+
-     (rows.length?table(['Produto','Categoria','Preço de venda','Em estoque','Situação','Ações'],rows):
-       empty('Nenhum produto encontrado','Cadastre produtos para começar a operar.')));
+      '<div class="toolbar"><label class="search-box" for="search">'+icon('search',17)+
+      '<input id="search" placeholder="Buscar produto ou categoria..." aria-label="Buscar produtos" value="'+esc(state.search)+'"></label>'+
+      '<button class="btn btn-secondary" data-action="refresh-products">'+icon('trend',16)+' Atualizar</button></div>'+active);
 }
 function salesView(rows) {
-  const items=rows.map(s=>'<tr><td><strong>#'+s.id+'</strong></td><td>'+shortDate(s.data)+'</td>'+
-   '<td>'+esc(s.hora)+'</td><td>'+esc(s.metodo_pagamento)+'</td><td>'+esc(s.itens.reduce((n,x)=>n+x.quantidade,0))+'</td>'+
-   '<td><strong>'+money(s.valor_total)+'</strong></td></tr>');
+  const cols=[{key:'id',label:'Número',value:x=>x.id},{key:'data',label:'Data',value:x=>x.data},
+    {key:'hora',label:'Horário',value:x=>x.hora},{key:'pagamento',label:'Pagamento',value:x=>x.metodo_pagamento},
+    {key:'itens',label:'Itens',value:x=>x.itens.reduce((n,i)=>n+i.quantidade,0)},
+    {key:'total',label:'Total',value:x=>x.valor_total}];
+  const row=s=>'<tr><td class="cell-id">#'+s.id+'</td><td>'+shortDate(s.data)+'</td><td>'+esc(s.hora)+'</td>'+
+    '<td>'+esc(s.metodo_pagamento)+'</td><td class="cell-num">'+s.itens.reduce((n,x)=>n+x.quantidade,0)+'</td>'+
+    '<td class="cell-num"><strong>'+money(s.valor_total)+'</strong></td></tr>';
   const total=rows.reduce((sum,s)=>sum+Number(s.valor_total),0);
   return pageHead('OPERAÇÃO','Vendas','Registre pedidos e acompanhe todas as vendas realizadas.',
-   '<button class="btn btn-primary" data-action="new-sale">'+icon('plus',16)+'<span>Registrar venda</span></button>')+
-   '<div class="stats-grid">'+stat('Vendas recentes',number(rows.length),'receipt','Últimos 300 registros','blue')+
-   stat('Total da listagem',money(total),'trend','Receita bruta listada','green')+'</div>'+
-   panel('Histórico de vendas','Registros mais recentes',items.length?
-    table(['Número','Data','Horário','Pagamento','Itens','Total'],items):
-    empty('Nenhuma venda ainda','Clique em Registrar venda para efetuar seu primeiro pedido.'));
+    '<button class="btn btn-primary" data-action="new-sale">'+icon('plus',16)+'<span>Registrar venda</span></button>')+
+    '<div class="stats-grid">'+stat('Vendas recentes',number(rows.length),'receipt','Últimos registros','blue')+
+    stat('Total da listagem',money(total),'trend','Receita bruta listada','green')+'</div>'+
+    panel('Histórico de vendas','Registros disponíveis',dataTable('sales',cols,rows,row));
 }
 function purchasesView(rows) {
-  const items=rows.map(c=>'<tr><td><strong>#'+c.id+'</strong></td><td>'+shortDate(c.data)+'</td>'+
-   '<td>'+esc(c.fornecedor)+'</td><td>'+esc(c.metodo_pagamento)+'</td>'+
-   '<td>'+esc(c.itens.reduce((n,x)=>n+x.quantidade,0))+'</td><td><strong>'+money(c.valor_total)+'</strong></td></tr>');
+  const cols=[{key:'id',label:'Número',value:x=>x.id},{key:'data',label:'Data',value:x=>x.data},
+    {key:'fornecedor',label:'Fornecedor',value:x=>x.fornecedor},
+    {key:'pagamento',label:'Pagamento',value:x=>x.metodo_pagamento},
+    {key:'itens',label:'Itens',value:x=>x.itens.reduce((n,i)=>n+i.quantidade,0)},
+    {key:'total',label:'Total',value:x=>x.valor_total}];
+  const row=p=>'<tr><td class="cell-id">#'+p.id+'</td><td>'+shortDate(p.data)+'</td><td><strong>'+esc(p.fornecedor)+'</strong></td>'+
+    '<td>'+esc(p.metodo_pagamento)+'</td><td class="cell-num">'+p.itens.reduce((n,i)=>n+i.quantidade,0)+'</td>'+
+    '<td class="cell-num"><strong>'+money(p.valor_total)+'</strong></td></tr>';
   return pageHead('SUPRIMENTOS','Compras','Controle a entrada de mercadorias e custos de aquisição.',
-     '<button class="btn btn-primary" data-action="new-purchase">'+icon('plus',16)+'<span>Nova compra</span></button>')+
-    panel('Histórico de compras','Últimos pedidos aos fornecedores',items.length?
-      table(['Número','Data','Fornecedor','Pagamento','Itens','Total'],items):empty('Sem compras registradas'));
+    '<button class="btn btn-primary" data-action="new-purchase">'+icon('plus',16)+'<span>Nova compra</span></button>')+
+    panel('Histórico de compras','Pedidos aos fornecedores',dataTable('purchases',cols,rows,row));
 }
 function financeView(rows) {
   const inc=rows.filter(x=>x.tipo==='entrada').reduce((n,x)=>n+Number(x.valor),0);
   const out=rows.filter(x=>x.tipo==='saída').reduce((n,x)=>n+Number(x.valor),0);
-  const items=rows.map(t=>'<tr><td>'+shortDate(t.data)+'</td><td><strong>'+esc(t.descricao)+'</strong></td>'+
-  '<td>'+esc(t.categoria)+'</td><td>'+tag(t.tipo,t.tipo==='saída'?'bad':'')+'</td>'+
-  '<td><strong>'+money(t.valor)+'</strong></td><td><button class="btn btn-danger btn-sm" data-action="delete-transaction" data-id="'+t.id+'">'+icon('trash',15)+'<span>Excluir</span></button></td></tr>');
+  const cols=[{key:'data',label:'Data',value:x=>x.data},{key:'descricao',label:'Descrição',value:x=>x.descricao},
+    {key:'categoria',label:'Categoria',value:x=>x.categoria},{key:'tipo',label:'Tipo',value:x=>x.tipo},
+    {key:'valor',label:'Valor',value:x=>x.valor},{key:'actions',label:'Ações',sortable:false}];
+  const row=t=>'<tr><td>'+shortDate(t.data)+'</td><td><strong>'+esc(t.descricao)+'</strong></td>'+
+    '<td>'+esc(t.categoria)+'</td><td>'+tag(t.tipo,t.tipo==='saída'?'bad':'')+'</td>'+
+    '<td class="cell-num"><strong>'+money(t.valor)+'</strong></td><td><div class="row-actions">'+
+    '<button class="btn btn-secondary btn-sm" data-action="edit-transaction" data-id="'+t.id+'">'+icon('edit',15)+' Editar</button>'+
+    '<button class="btn btn-danger btn-sm btn-icon" data-action="delete-transaction" data-id="'+t.id+'" title="Excluir" aria-label="Excluir lançamento">'+icon('trash',15)+'</button></div></td></tr>';
   return pageHead('CONTROLE FINANCEIRO','Financeiro','Lançamentos avulsos de entrada e saída de caixa.',
-   '<button class="btn btn-primary" data-action="new-transaction">'+icon('plus',16)+'<span>Novo lançamento</span></button>')+
-   '<div class="stats-grid">'+stat('Entradas',money(inc),'arrowUp','Lançamentos avulsos','green')+
-   stat('Saídas',money(out),'arrowDown','Lançamentos avulsos','red')+
-   stat('Saldo',money(inc-out),'wallet','Entradas menos saídas','blue')+'</div>'+
-   panel('Extrato','Últimos 500 lançamentos',items.length?
-      table(['Data','Descrição','Categoria','Tipo','Valor','Ações'],items):empty('Sem lançamentos no extrato'));
+    '<button class="btn btn-primary" data-action="new-transaction">'+icon('plus',16)+'<span>Novo lançamento</span></button>')+
+    '<div class="stats-grid">'+stat('Entradas',money(inc),'arrowUp','Lançamentos avulsos','green')+
+    stat('Saídas',money(out),'arrowDown','Lançamentos avulsos','red')+
+    stat('Saldo',money(inc-out),'wallet','Entradas menos saídas','blue')+'</div>'+
+    panel('Extrato','Registros disponíveis',dataTable('finance',cols,rows,row));
 }
 function teamView(rows) {
-  const items=rows.map(f=>'<tr><td><strong>'+esc(f.nome)+'</strong></td><td>'+esc(f.cargo)+'</td>'+
-    '<td>'+esc(f.email||'—')+'</td><td>'+esc(f.telefone||'—')+'</td>'+
+  const cols=[{key:'id',label:'ID',value:x=>x.id},{key:'nome',label:'Nome',value:x=>x.nome},
+    {key:'cargo',label:'Cargo',value:x=>x.cargo},{key:'email',label:'Email',value:x=>x.email||''},
+    {key:'telefone',label:'Telefone',value:x=>x.telefone||''},{key:'ativo',label:'Situação',value:x=>x.ativo?1:0},
+    {key:'actions',label:'Ações',sortable:false}];
+  const row=f=>'<tr><td class="cell-id">#'+f.id+'</td><td><strong>'+esc(f.nome)+'</strong></td>'+
+    '<td>'+esc(f.cargo)+'</td><td>'+esc(f.email||'—')+'</td><td>'+esc(f.telefone||'—')+'</td>'+
     '<td>'+tag(f.ativo?'Ativo':'Inativo',f.ativo?'':'warn')+'</td>'+
-    '<td><button class="btn btn-secondary btn-sm" data-action="edit-employee" data-id="'+f.id+'">'+icon('edit',15)+'<span>Editar</span></button></td></tr>');
+    '<td><div class="row-actions"><button class="btn btn-secondary btn-sm" data-action="edit-employee" data-id="'+f.id+'">'+icon('edit',15)+' Editar</button>'+
+    '<button class="btn btn-danger btn-sm btn-icon" data-action="archive-employee" data-id="'+f.id+'" title="Inativar" aria-label="Inativar funcionário">'+icon('trash',15)+'</button></div></td></tr>';
   return pageHead('PESSOAS','Equipe','Cadastre funcionários e gerencie permissões de acesso.',
-    '<button class="btn btn-secondary" data-action="new-user">'+icon('user',16)+'<span>Criar acesso</span></button><button class="btn btn-primary" data-action="new-employee">'+icon('plus',16)+'<span>Novo funcionário</span></button>')+
-    panel('Colaboradores',rows.length+' registros',items.length?
-      table(['Nome','Cargo','E-mail','Telefone','Situação','Ações'],items):empty('Nenhum funcionário cadastrado'));
+    '<button class="btn btn-secondary" data-action="new-user">'+icon('user',16)+'<span>Criar acesso</span></button>'+
+    '<button class="btn btn-primary" data-action="new-employee">'+icon('plus',16)+'<span>Novo funcionário</span></button>')+
+    panel('Colaboradores',rows.length+' registros',dataTable('team',cols,rows,row));
 }
 function pageKey() {
   const match=available().find(([, , ,url])=>url===state.path);
