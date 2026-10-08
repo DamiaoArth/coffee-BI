@@ -388,7 +388,7 @@ document.addEventListener('click',async e=>{
   const action=btn.dataset.action;
   try{
     if(action==='close-modal'){closeModal();return;}
-    if(action==='toggle-password'){state.showPassword=!state.showPassword;render();document.querySelector('#password')?.focus();return;}
+    if(action==='toggle-password'){state.showPassword=!state.showPassword;const p=document.querySelector('#password');if(p){p.type=state.showPassword?'text':'password';btn.textContent=state.showPassword?'Ocultar':'Mostrar';p.focus();}return;}
     if(action==='logout'){await request('/auth/logout',{method:'POST'});state.user=null;state.csrf='';state.cache.clear();history.replaceState({},'','/');render();return;}
     if(action==='retry'){invalidate(pageKey());paintPage();return;}
     if(action==='new-product'){productForm();return;}
