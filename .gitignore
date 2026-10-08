@@ -1,3 +1,15 @@
 .venv
 
 */__pycache__
+
+# Segredos locais e estado de execução do novo backend
+.env
+.env.*
+!.env.example
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+data/*.db
+data/*.db-*
+*.sqlite3
