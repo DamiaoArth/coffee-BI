@@ -1,3 +1,19 @@
+# Coffee BI — versão moderna (FastAPI + Firebase)
+
+**A nova aplicação web já não usa SQLite/PostgreSQL para operar.** O banco é **Cloud Firestore (Firebase)**, com acesso exclusivo pelo backend FastAPI.
+
+Guia para configurar Firebase, executar, usar emulador e migrar dados SQL existentes: [docs/SPA.md](docs/SPA.md).
+
+    python -m pip install -r requirements-api.txt
+    # Configure FIREBASE_PROJECT_ID, credenciais do Firebase e SESSION_SECRET no .env
+    python -m api.bootstrap_admin --username admin
+    uvicorn api.main:app --reload --port 8000
+
+A aplicação web fica em http://localhost:8000; a API em /api/docs.
+A branch original com Streamlit e seu banco SQL permanece abaixo, apenas como versão legada.
+
+---
+
 # ERP Cafeteria
 
 Sistema de gestão e BI para cafeteria: vendas, produtos/estoque, compras,
