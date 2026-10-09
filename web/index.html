@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Coffee BI · Gestão da cafeteria</title>
+    <link rel="stylesheet" href="/assets/styles.css" />
+    <script defer src="/assets/app.js"></script>
+  </head>
+  <body>
+    <section id="login-screen" class="login-screen" hidden>
+      <div class="login-art">
+        <span class="brand">◉ coffee<span>BI</span></span>
+        <div>
+          <p class="eyebrow">GESTÃO COM MAIS CLAREZA</p>
+          <h1>Um bom café.<br />Um negócio<br />bem cuidado.</h1>
+          <p>
+            Do primeiro pedido aos resultados do mês.<br />Tudo conectado, em um
+            só lugar.
+          </p>
+        </div>
+        <small>PRODUTOS · VENDAS · ESTOQUE · FINANÇAS</small>
+      </div>
+      <div class="login-panel">
+        <form id="login-form">
+          <p class="eyebrow">BEM-VINDO DE VOLTA</p>
+          <h2>Entre na sua cafeteria</h2>
+          <p class="muted">Acesse seu painel de gestão.</p>
+          <label
+            >Usuário<input
+              name="username"
+              autocomplete="username"
+              required /></label
+          ><label
+            >Senha<input
+              name="password"
+              type="password"
+              autocomplete="current-password"
+              required
+          /></label>
+          <p id="login-error" class="form-error" role="alert"></p>
+          <button class="primary" type="submit">
+            Entrar no painel <span>→</span>
+          </button>
+        </form>
+      </div>
+    </section>
+    <div id="app-shell" hidden>
+      <aside class="sidebar">
+        <a class="brand" href="#dashboard">◉ coffee<span>BI</span></a>
+        <div class="workspace">
+          <span class="avatar">C</span>
+          <div>
+            <strong>Minha cafeteria</strong><small>Visão do negócio</small>
+          </div>
+        </div>
+        <p class="nav-label">PRINCIPAL</p>
+        <nav id="navigation" aria-label="Menu principal"></nav>
+        <div class="sidebar-bottom">
+          <div class="user">
+            <span class="avatar" id="user-avatar">A</span>
+            <div>
+              <strong id="username"></strong><small id="user-role"></small>
+            </div>
+          </div>
+          <button id="logout" class="logout">Sair da conta ↗</button>
+        </div>
+      </aside>
+      <div class="main-shell">
+        <header class="topbar">
+          <span
+            >Cafeteria <span class="divider">/</span>
+            <strong id="breadcrumb">Visão geral</strong></span
+          >
+          <div class="topbar-actions">
+            <span class="live"><i></i> Dados do seu negócio</span
+            ><button id="mobile-logout" class="secondary">Sair</button>
+          </div>
+        </header>
+        <main id="main-content">
+          <div class="page-heading">
+            <div>
+              <p class="eyebrow" id="eyebrow">SEU NEGÓCIO, EM PERSPECTIVA</p>
+              <h1 id="page-title">Visão geral</h1>
+              <p id="page-description" class="muted"></p>
+            </div>
+            <div id="page-actions"></div>
+          </div>
+          <section id="content" aria-live="polite"></section>
+        </main>
+        <footer>
+          Coffee BI <span>Feito para o dia a dia da sua cafeteria.</span>
+        </footer>
+      </div>
+    </div>
+    <dialog id="modal" aria-labelledby="modal-title">
+      <form id="editor-form">
+        <header class="modal-header">
+          <div>
+            <p class="eyebrow">COFFEE BI</p>
+            <h2 id="modal-title"></h2>
+          </div>
+          <button
+            type="button"
+            class="icon-button"
+            id="close-modal"
+            aria-label="Fechar"
+          >
+            ×
+          </button>
+        </header>
+        <div id="form-fields"></div>
+        <p id="form-error" class="form-error" role="alert"></p>
+        <div class="modal-footer">
+          <button type="button" class="secondary" id="cancel-modal">
+            Cancelar</button
+          ><button type="submit" class="primary" id="save-button">
+            Salvar
+          </button>
+        </div>
+      </form>
+    </dialog>
+    <div id="toast" role="status" hidden></div>
+  </body>
+</html>

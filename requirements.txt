@@ -1,8 +1,6 @@
-streamlit==1.31.0
-pandas==2.2.0
-plotly==5.18.0
-sqlalchemy==2.0.25
-psycopg2-binary==2.9.9
-python-dotenv==1.0.0
-bcrypt==4.1.2
-openpyxl==3.1.2
+-r requirements-api.txt
+streamlit>=1.41,<2
+pandas>=2.2.3,<4
+plotly>=5.18,<7
+openpyxl>=3.1.2,<4
+matplotlib>=3.8,<4

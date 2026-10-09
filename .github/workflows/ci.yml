@@ -1,0 +1,66 @@
+name: Coffee BI checks
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+concurrency:
+  group: coffee-bi-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+permissions:
+  contents: read
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ['3.12', '3.13']
+        database: [sqlite, postgres]
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: coffee_test
+          POSTGRES_PASSWORD: coffee_test
+          POSTGRES_DB: coffee_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U coffee_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+      - run: pip install -r requirements-dev.txt
+      - name: Test SQLite
+        if: matrix.database == 'sqlite'
+        run: python -m pytest -q
+      - name: Test PostgreSQL
+        if: matrix.database == 'postgres'
+        env:
+          COFFEE_TEST_DATABASE_URL: postgresql://coffee_test:coffee_test@localhost:5432/coffee_test
+        run: python -m pytest -q
+      - name: Check JavaScript
+        run: node --check web/app.js
+      - name: Install legacy UI dependencies
+        if: matrix.python == '3.12' && matrix.database == 'sqlite'
+        run: pip install -r requirements.txt
+      - name: Legacy Streamlit regression
+        if: matrix.python == '3.12' && matrix.database == 'sqlite'
+        run: python tests/streamlit_smoke.py
+      - name: Install browser
+        if: matrix.python == '3.12' && matrix.database == 'sqlite'
+        run: python -m playwright install --with-deps chromium
+      - name: Real browser CRUD regression
+        if: matrix.python == '3.12' && matrix.database == 'sqlite'
+        run: python tests/browser_smoke.py
+      - uses: actions/upload-artifact@v4
+        if: matrix.python == '3.12' && matrix.database == 'sqlite'
+        with:
+          name: coffee-bi-ui
+          path: docs/screenshots/
