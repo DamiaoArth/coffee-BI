@@ -9,3 +9,10 @@ node_modules/
 
 .ruff_cache/
 /credentials/service-account.json
+credentials/
+.coffee-bi/
+*.sqlite3
+*.sqlite3-*
+*.egg-info/
+build/
+dist/

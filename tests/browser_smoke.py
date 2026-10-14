@@ -78,6 +78,27 @@ def run():
                         "request",
                         lambda request: requests.append((request.method, request.url)),
                     )
+                    page.goto(url + "/docs")
+                    expect(page.locator(".swagger-ui .opblock").first).to_be_visible()
+                    expect(
+                        page.locator(".swagger-ui .errors-wrapper")
+                    ).not_to_be_visible()
+                    health = page.locator(".opblock").filter(
+                        has=page.locator(
+                            '.opblock-summary-path[data-path="/api/health"]'
+                        )
+                    )
+                    health.locator(".opblock-summary").click()
+                    health.get_by_role("button", name="Try it out").click()
+                    health.get_by_role("button", name="Execute", exact=True).click()
+                    expect(
+                        health.locator(
+                            ".live-responses-table .response-col_status:not(.col_header)"
+                        )
+                    ).to_have_text("200")
+                    assert all(u.startswith(url) for _, u in requests), (
+                        "Docs requested external resources"
+                    )
                     page.goto(url)
                     page.locator("#login-form [name=username]").fill("admin")
                     page.locator("#login-form [name=password]").fill(
@@ -274,6 +295,7 @@ def run():
                                 "requests": responses,
                                 "uncaught_js_errors": errors,
                                 "mobile_viewport_overflow": False,
+                                "local_swagger_execute_health": True,
                             },
                             ensure_ascii=False,
                             indent=2,

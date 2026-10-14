@@ -8,6 +8,11 @@
   "requests": [
     {
       "method": "GET",
+      "path": "/api/health",
+      "status": 200
+    },
+    {
+      "method": "GET",
       "path": "/api/auth/me",
       "status": 401
     },
@@ -273,5 +278,6 @@
     }
   ],
   "uncaught_js_errors": [],
-  "mobile_viewport_overflow": false
+  "mobile_viewport_overflow": false,
+  "local_swagger_execute_health": true
 }

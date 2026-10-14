@@ -1,3 +1,30 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "coffee-bi"
+version = "2.1.0"
+description = "Gestão de cafeteria com API FastAPI e banco local SQLite"
+readme = "README.md"
+requires-python = ">=3.12"
+dynamic = ["dependencies"]
+
+[project.scripts]
+BI = "coffee_bi.cli:main"
+
+[project.optional-dependencies]
+postgres = ["psycopg2-binary>=2.9.9,<3"]
+
+[tool.setuptools.dynamic]
+dependencies = {file = ["requirements-api.txt"]}
+
+[tool.setuptools.packages.find]
+include = ["coffee_bi*", "api*", "config*", "models*", "services*", "web*"]
+
+[tool.setuptools.package-data]
+web = ["*.html", "*.js", "*.css", "swagger/*"]
+
 [tool.ruff]
 target-version = "py312"
 exclude = [".venv"]

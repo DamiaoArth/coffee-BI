@@ -54,3 +54,40 @@ O registro das respostas HTTP observadas no navegador está em [VALIDACAO_HTTP.j
 - Vendas/compras não têm edição arbitrária por PUT: cancelar e registrar novamente evita trocar totais sem ajustar estoque.
 - Gerenciamento avançado de usuários permanece na interface Streamlit. O novo frontend permite gerenciar funcionários, e o bootstrap configura contas iniciais.
 - O Streamlit ainda emite avisos de depreciação de `use_container_width` nas versões recentes; isso não impediu os fluxos verificados. O frontend web é a interface recomendada.
+
+
+## Modo local de desenvolvimento — 14/10/2026
+
+Partindo do código aceito em `ffc67b7`, foi implementado o pacote instalável
+`coffee-bi`, que registra o comando `BI` no ambiente Python. `BI init --dev`
+inicia a interface e a API FastAPI em localhost com recarga automática,
+SQLite persistente em `~/.coffee-bi/dev.sqlite3`, conta `dev / dev12345` e
+catálogo inicial criado uma única vez. `--data-dir` permite uma pasta portátil.
+O modo padrão `BI init` mantém a configuração do ambiente/.env.
+
+O modo local substitui no processo a configuração de banco remoto e cookie
+HTTPS antes dos imports da API; não modifica o `.env`. O driver PostgreSQL
+passa a ser opcional na instalação de uso (`.[postgres]`). Um marcador no
+banco impede a recriação dos exemplos após exclusões/edições/reinícios.
+
+O `/docs` passou a servir Swagger UI local (com licença incluída), compatível
+com OpenAPI 3.1, com scripts externos ao HTML para respeitar a política CSP.
+Não depende de CDN e permite autenticar/testar a API na própria página.
+
+Validação desta alteração:
+
+- 28 testes automatizados: os 19 existentes e 9 verificações do launcher,
+  isolamento de configuração, caminho persistente e argumentos inválidos.
+- `tests/dev_smoke.py`: comando BI instalado de verdade, HTTP real,
+  criação/edição/venda, estoque, reinício em outra pasta, três reinicializações,
+  seed não duplicado/recriado, configuração remota ignorada, cookie local,
+  arquivos do frontend/Swagger e logout, sempre em bancos temporários.
+- `tests/browser_smoke.py`: execução de `/api/health` pelo Swagger sem recursos
+  externos e regressão completa do CRUD na interface, paginação, ordenação,
+  gráficos, persistência, layout móvel e logout.
+- Empacotamento wheel inclui os assets do frontend e Swagger, e preserva
+  o console entry point `BI`.
+
+As verificações locais usam Linux/Python 3.12. Windows/Python 3.12 e 3.13
+foram adicionados à CI para validar o launcher e o SQLite; o resultado da
+CI deve ser conferido no GitHub. Não houve acesso ao banco real do usuário.

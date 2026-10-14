@@ -42,10 +42,20 @@ WEB = Path(__file__).resolve().parent.parent / "web"
 async def lifespan(app):
     init_db()
     bootstrap_users()
+    if os.getenv("COFFEE_BI_MODE") == "dev":
+        from config.local_dev import prepare_local_database
+
+        prepare_local_database()
     yield
 
 
-app = FastAPI(title="Coffee BI API", version="2.0.0", lifespan=lifespan)
+app = FastAPI(
+    title="Coffee BI API",
+    version="2.1.0",
+    lifespan=lifespan,
+    docs_url=None,
+    redoc_url=None,
+)
 
 
 @app.middleware("http")
@@ -512,6 +522,12 @@ def dashboard(
 
 
 app.mount("/assets", StaticFiles(directory=WEB), name="assets")
+app.mount("/swagger-ui", StaticFiles(directory=WEB / "swagger"), name="swagger-ui")
+
+
+@app.get("/docs", include_in_schema=False)
+def api_docs():
+    return FileResponse(WEB / "api-docs.html")
 
 
 @app.get("/", include_in_schema=False)

@@ -4,48 +4,72 @@ Gestão de cafeteria com catálogo, estoque, vendas, compras, equipe, financeiro
 
 ![Painel](docs/screenshots/dashboard-desktop.png)
 
-## Executar a nova interface
+## Iniciar na faculdade: banco local + API
 
-Python 3.12 ou 3.13:
+Use Python 3.12 ou 3.13. No terminal, dentro da pasta do projeto:
+
+```powershell
+py -m venv .venv
+.venv\Scripts\python.exe -m pip install -e .
+.venv\Scripts\BI.exe init --dev
+```
+
+Se o ambiente já está ativado:
+
+```powershell
+python -m pip install -e .
+BI init --dev
+```
+
+Linux/macOS:
 
 ```bash
 python -m venv .venv
+source .venv/bin/activate
+python -m pip install -e .
+BI init --dev
 ```
 
-Ative o ambiente no Windows:
+- Interface: **http://127.0.0.1:8000**.
+- API interativa: **http://127.0.0.1:8000/docs**. Faça login na interface ou execute `/api/auth/login` no Swagger para testar as operações autenticadas.
+- Login de desenvolvimento: **dev / dev12345** (administrador).
+- Banco: **`%USERPROFILE%\.coffee-bi\dev.sqlite3`** no Windows; **`~/.coffee-bi/dev.sqlite3`** no Linux/macOS.
+- SQLite é um arquivo local: não precisa instalar/configurar PostgreSQL, Firebase, Docker nem um servidor de banco.
+- A primeira execução cria as tabelas, a conta dev, 13 produtos e 3 funcionários de exemplo. Não inventa histórico de vendas; registre uma venda para alimentar os indicadores.
+- Reiniciar ou recarregar não apaga dados, não duplica exemplos e não restaura estoque alterado. O banco é o mesmo mesmo que o comando seja executado de outra pasta.
+- `--dev` escolhe o banco local mesmo se `.env`/ambiente apontar para um banco remoto; o arquivo `.env` não é modificado.
+- API e interface funcionam sem serviços externos após instalar as dependências, inclusive o Swagger. O login continua necessário.
+- Alterações Python recarregam a API automaticamente; para alterações em HTML/CSS/JS, atualize a página. **Ctrl+C** encerra o servidor.
+
+Porta alternativa e pasta portátil para guardar o banco junto do projeto:
 
 ```powershell
-.venv\Scripts\Activate.ps1
+BI init --dev --port 8001 --data-dir .coffee-bi
 ```
 
-Ou no Linux/macOS:
+Continue indicando a mesma pasta ao reiniciar. O acesso dev tem credencial de exemplo e o launcher aceita somente endereços locais nesse modo.
+
+Se `BI` não for reconhecido, instale novamente no ambiente correto (`python -m pip install -e .`) e use **`python -m coffee_bi init --dev`** ou **`.venv\Scripts\BI.exe init --dev`**. Um `BI.exe` antigo de outro ambiente não inicia esta versão.
+
+## Execução padrão / banco existente
+
+`BI init` inicia a mesma API com as configurações normais do ambiente/.env, sem a conta ou o catálogo dev. Copie `.env.example` para `.env` e configure `ADMIN_PASSWORD` com uma senha própria de 6 caracteres ou mais (máximo 72 bytes UTF-8). O administrador só é criado se ainda não houver conta com `ADMIN_USERNAME`; senhas existentes são preservadas.
 
 ```bash
-source .venv/bin/activate
+python -m pip install -e .
+BI init
 ```
 
-Instale e configure:
+Também é possível executar diretamente `python -m uvicorn api.main:app --reload`.
 
-```bash
-python -m pip install -r requirements-api.txt
-```
-
-Copie `.env.example` para `.env`. Configure `ADMIN_PASSWORD` com uma senha própria de ao menos 6 caracteres e no máximo 72 bytes UTF-8. O administrador só é criado quando essa variável está preenchida e ainda não existe um usuário com `ADMIN_USERNAME`.
-
-```bash
-python -m uvicorn api.main:app --reload
-```
-
-Abra **http://127.0.0.1:8000**. Documentação interativa: **http://127.0.0.1:8000/docs**.
-
-- `DATABASE_URL` mantém o SQLite padrão ou aponta para PostgreSQL. URLs `postgres://` e `postgresql://` usam explicitamente o driver psycopg2 instalado.
+- `DATABASE_URL` mantém o SQLite padrão ou aponta para PostgreSQL. Para PostgreSQL instale **`python -m pip install -e ".[postgres]"`**; o driver é opcional no modo local.
+- URLs `postgres://` e `postgresql://` usam explicitamente `psycopg2`.
 - Para reutilizar dados, indique o mesmo banco da aplicação anterior. Um caminho SQLite absoluto evita abrir outro banco ao executar de uma pasta diferente.
-- Usuários existentes mantêm suas senhas. Alterar `ADMIN_PASSWORD` não redefine uma conta existente.
-- `CAIXA_USERNAME` e `CAIXA_PASSWORD` permitem criar opcionalmente um operador.
+- `CAIXA_USERNAME` e `CAIXA_PASSWORD` criam opcionalmente um operador.
 - `BUSINESS_TIMEZONE` controla as datas do negócio; padrão: `America/Sao_Paulo`.
-- Use `COOKIE_SECURE=true` em HTTPS.
+- Use `COOKIE_SECURE=true` em HTTPS; o modo dev define cookie local para HTTP.
 
-**Dados de demonstração são opcionais:** após configurar o `.env`, execute `python init_db.py`. Esse comando adiciona o catálogo e funcionários de exemplo de forma idempotente. Não cria vendas fictícias. Para criar apenas as tabelas e os usuários configurados, use `python init_db.py --no-examples` ou inicie a API normalmente.
+Dados de demonstração são opcionais no modo padrão: `python init_db.py` adiciona catálogo e funcionários idempotentemente; `python init_db.py --no-examples` cria somente tabelas/usuários configurados.
 
 ## Rotas e comportamento
 
@@ -91,9 +115,11 @@ Os serviços de venda, compra e estoque corrigidos também são usados nessa int
 
 ```bash
 python -m pip install -r requirements-dev.txt
+python -m pip install -e .
 python -m pytest -q
 python -m playwright install chromium
 python tests/browser_smoke.py
+python tests/dev_smoke.py
 ```
 
 Os testes usam bancos temporários; o teste de navegador inicia seu próprio servidor. Para testar PostgreSQL, configure `COFFEE_TEST_DATABASE_URL` **exclusivamente com um banco descartável**, pois as tabelas desse banco são recriadas. Nunca use o banco real nessa variável. A CI testa SQLite/PostgreSQL e Python 3.12/3.13.
