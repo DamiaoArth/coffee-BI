@@ -8,7 +8,7 @@ import os
 import signal
 import socket
 import subprocess
-import sys
+import sysconfig
 import tempfile
 import time
 from contextlib import contextmanager
@@ -17,7 +17,9 @@ from pathlib import Path
 import httpx
 
 ROOT = Path(__file__).resolve().parents[1]
-EXECUTABLE = Path(sys.executable).parent / ("BI.exe" if os.name == "nt" else "BI")
+EXECUTABLE = Path(sysconfig.get_path("scripts")) / (
+    "BI.exe" if os.name == "nt" else "BI"
+)
 
 
 @contextmanager

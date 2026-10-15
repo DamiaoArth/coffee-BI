@@ -54,3 +54,9 @@ def product(admin):
     )
     assert response.status_code == 201, response.text
     return response.json()
+
+
+def pytest_sessionfinish(session, exitstatus):
+    # Release pooled SQLite handles before TemporaryDirectory cleanup on Windows.
+    engine.dispose()
+    _test_dir.cleanup()
