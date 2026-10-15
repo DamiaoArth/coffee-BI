@@ -11,7 +11,7 @@ import subprocess
 import sysconfig
 import tempfile
 import time
-from contextlib import contextmanager
+from contextlib import closing, contextmanager
 from pathlib import Path
 
 import httpx
@@ -194,7 +194,7 @@ def run():
         # A fully emptied catalog should not be recreated from examples.
         import sqlite3
 
-        with sqlite3.connect(data_dir / "dev.sqlite3") as db:
+        with closing(sqlite3.connect(data_dir / "dev.sqlite3")) as db, db:
             db.execute("DELETE FROM produtos")
             db.execute("DELETE FROM funcionarios")
         with server(data_dir, working_dir, folder / "third.log") as client:
