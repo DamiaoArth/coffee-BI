@@ -20,7 +20,7 @@ from sqlalchemy.orm import Session
 from api.schemas import Employee, Login, Movement, Product, Purchase, Transaction
 from config.bootstrap import bootstrap_users
 from config.clock import business_today
-from config.database import get_db, init_db
+from config.database import engine, get_db, init_db
 from models.database_models import (
     Compra,
     Funcionario,
@@ -46,7 +46,10 @@ async def lifespan(app):
         from config.local_dev import prepare_local_database
 
         prepare_local_database()
-    yield
+    try:
+        yield
+    finally:
+        engine.dispose()
 
 
 app = FastAPI(

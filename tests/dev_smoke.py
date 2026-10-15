@@ -93,7 +93,15 @@ def server(data_dir, working_dir, log_path):
         finally:
             if process.poll() is None:
                 if os.name == "nt":
-                    process.send_signal(signal.CTRL_BREAK_EVENT)
+                    # BI.exe is a distlib launcher that spawns Python. A console
+                    # break can stop the wrapper before its reload workers exit;
+                    # stop the entire isolated test tree while the parent lives.
+                    subprocess.run(
+                        ["taskkill", "/PID", str(process.pid), "/T", "/F"],
+                        check=True,
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.PIPE,
+                    )
                 else:
                     os.killpg(process.pid, signal.SIGINT)
                 try:
